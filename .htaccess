@@ -1,4 +1,4 @@
-# .htaccess - v0.1.0 with Environment Switch
+# .htaccess - v0.2.0 with Environment Switch
 RewriteEngine On
 
 # Redirect to HTTPS if available

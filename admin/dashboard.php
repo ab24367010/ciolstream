@@ -1,5 +1,5 @@
 <?php
-// admin/dashboard.php - Admin dashboard v0.1.0
+// admin/dashboard.php - Admin dashboard v0.2.0
 require_once '../config/database.php';
 require_once '../includes/functions.php';
 
@@ -142,7 +142,7 @@ foreach ($videos as $video) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Admin Dashboard - MovieStream v0.1.0</title>
+    <title>Admin Dashboard - MovieStream v0.2.0</title>
     <link rel="stylesheet" href="../assets/css/style.css">
 </head>
 <body>
@@ -150,7 +150,7 @@ foreach ($videos as $video) {
         <nav class="navbar">
             <div class="nav-container">
                 <h1 class="logo">
-                    <a href="../public/index.php" style="color: white; text-decoration: none;">MovieStream Admin v0.1.0</a>
+                    <a href="../public/index.php" style="color: white; text-decoration: none;">MovieStream Admin v0.2.0</a>
                 </h1>
                 <div class="nav-links">
                     <a href="../public/index.php" class="btn">View Site</a>

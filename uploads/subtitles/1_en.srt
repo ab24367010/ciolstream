@@ -1,6 +1,6 @@
 1
 00:00:00,000 --> 00:00:04,000
-Welcome to MovieStream v0.1.0
+Welcome to MovieStream v0.2.0
 
 2
 00:00:04,000 --> 00:00:08,000

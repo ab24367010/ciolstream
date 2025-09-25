@@ -1,8 +1,8 @@
-# MovieStream v0.1.0 - Complete Movie Streaming Platform
+# MovieStream v0.2.0 - Complete Movie Streaming Platform
 
 A professional-grade movie streaming platform with advanced subtitle management, user analytics, and modern responsive design. Perfect for XAMPP/LAMP environments on Ubuntu localhost.
 
-## 🚀 New Features in v0.1.0
+## 🚀 New Features in v0.2.0
 
 ### Enhanced User Experience
 - ✅ **Complete User Dashboard** with watch history and statistics
@@ -363,4 +363,4 @@ For support and questions:
 
 ---
 
-**MovieStream v0.1.0** - Your complete movie streaming solution! 🎬✨
+**MovieStream v0.2.0** - Your complete movie streaming solution! 🎬✨

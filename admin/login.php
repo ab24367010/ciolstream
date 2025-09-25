@@ -1,5 +1,5 @@
 <?php
-// admin/login.php - Updated for v0.1.0
+// admin/login.php - Updated for v0.2.0
 require_once '../config/database.php';
 
 $error = '';
@@ -32,7 +32,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Admin Login - MovieStream v0.1.0</title>
+    <title>Admin Login - MovieStream v0.2.0</title>
     <link rel="stylesheet" href="../assets/css/style.css">
 </head>
 <body>

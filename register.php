@@ -1,5 +1,5 @@
 <?php
-// register.php - Updated for v0.1.0
+// register.php - Updated for v0.2.0
 require_once 'config/database.php';
 
 $error = '';
@@ -47,7 +47,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Register - MovieStream v0.1.0</title>
+    <title>Register - MovieStream v0.2.0</title>
     <link rel="stylesheet" href="assets/css/style.css">
 </head>
 <body>
@@ -55,7 +55,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <nav class="navbar">
             <div class="nav-container">
                 <h1 class="logo">
-                    <a href="public/index.php" style="color: white; text-decoration: none;">MovieStream v0.1.0</a>
+                    <a href="public/index.php" style="color: white; text-decoration: none;">MovieStream v0.2.0</a>
                 </h1>
                 <div class="nav-links">
                     <a href="login.php" class="btn">Login</a>
