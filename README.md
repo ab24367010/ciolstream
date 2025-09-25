@@ -179,7 +179,7 @@ Visit `http://localhost/moviestream/setup.php` to verify installation:
 **Test User:**
 - URL: `/login.php`
 - Username: `testuser`
-- Password: `testuser`
+- Password: `testpass`
 
 ### First Steps
 
