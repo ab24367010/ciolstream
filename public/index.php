@@ -157,7 +157,7 @@ $genres = getGenres($pdo);
                 
                 <div class="content-grid">
                     <?php foreach ($movies as $video): ?>
-                        <div class="content-card" onclick="window.location.href='watch.php?id=<?php echo $video['id']; ?>'">
+                        <div class="content-card" onclick="window.location.href='/moviestream/public/watch.php?id=<?php echo $video['id']; ?>'">
                             <div class="content-thumbnail">
                                 <img src="<?php echo $video['thumbnail_url'] ?: getYouTubeThumbnail($video['youtube_id']); ?>" 
                                      alt="<?php echo htmlspecialchars($video['title']); ?>"
@@ -202,11 +202,12 @@ $genres = getGenres($pdo);
                                 </div>
                                 
                                 <div class="content-actions">
-                                    <a href="watch.php?id=<?php echo $video['id']; ?>" 
-                                       class="btn btn-primary"
-                                       onclick="event.stopPropagation()">
-                                        ▶ Watch Now
-                                    </a>
+                                    <a href="/moviestream/public/watch.php?id=<?php echo $video['id']; ?>" 
+                                    class="btn btn-primary"
+                                    onclick="event.stopPropagation()">
+                                    ▶ Watch Now
+                                </a>
+
                                     <?php if ($user_id): ?>
                                         <button class="btn btn-small add-to-watchlist" 
                                                 data-video-id="<?php echo $video['id']; ?>"

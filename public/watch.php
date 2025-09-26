@@ -1,4 +1,6 @@
 <?php
+session_start();
+
 // public/watch.php - Enhanced Video player page v0.2.0 with Series Support - FIXED ACCESS
 require_once '../config/database.php';
 require_once '../includes/functions.php';
@@ -305,7 +307,7 @@ if ($is_episode && $video['series_id']) {
                                     <?php for ($i = 1; $i <= 5; $i++): ?>
                                         <span class="star <?php echo ($video['user_rating'] && $i <= $video['user_rating']) ? 'active' : ''; ?>" 
                                               data-rating="<?php echo $i; ?>">★</span>
-                                    <?php endforeach; ?>
+                                    <?php endfor; ?>
                                 </div>
                                 <?php if ($video['user_rating']): ?>
                                     <span class="user-rating-text">Your rating: <?php echo $video['user_rating']; ?>/5</span>
