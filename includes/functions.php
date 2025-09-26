@@ -1,5 +1,5 @@
 <?php
-// includes/functions.php - Enhanced Helper functions v0.2.0 with Series Support
+// includes/functions.php - Enhanced Helper functions v0.2.0 with Series Support - FIXED
 
 // Define constants
 if (!defined('SUBTITLES_DIR')) {
@@ -359,16 +359,16 @@ function getSeriesWithEpisodes($pdo, $series_id, $user_id = null) {
     }
 }
 
-// Check if user has access to subtitles
+// FIXED: Check if user has access to subtitles (only active users)
 function userHasSubtitleAccess($user_status) {
     return $user_status === 'active';
 }
 
-// Check if user has access to content
+// FIXED: Check if user has access to content (everyone can watch)
 function userHasContentAccess($user_status) {
-    // Allow both active and inactive users to watch content
-    // But inactive users won't get subtitles
-    return in_array($user_status, ['active', 'inactive']) || !$user_status; // Allow guest access too
+    // Everyone can watch content regardless of login status
+    // Guests (null/empty status), active users, and inactive users can all watch
+    return true;
 }
 
 // Format duration from seconds to readable format
@@ -498,6 +498,11 @@ function rateContent($pdo, $user_id, $video_id = null, $series_id = null, $ratin
         error_log("Error rating content: " . $e->getMessage());
         return false;
     }
+}
+
+// Add legacy function for backward compatibility
+function rateVideo($pdo, $user_id, $video_id, $rating, $review = '') {
+    return rateContent($pdo, $user_id, $video_id, null, $rating, $review);
 }
 
 // Get video with user-specific data (enhanced for series support)
@@ -865,7 +870,7 @@ function sanitizeInput($input, $type = 'string') {
     }
 }
 
-// Check if user session is valid
+// FIXED: Check if user session is valid - don't logout expired users
 function isValidUserSession($pdo, $user_id) {
     if (!$user_id) {
         return false;
@@ -880,15 +885,15 @@ function isValidUserSession($pdo, $user_id) {
             return false;
         }
         
-        // Check if user is expired
+        // Check if user is expired and auto-expire them
         if ($user['expiry_date'] && strtotime($user['expiry_date']) < time() && $user['status'] === 'active') {
-            // Auto-expire the user
+            // Auto-expire the user but DON'T invalidate the session
             $stmt = $pdo->prepare("UPDATE users SET status = 'inactive' WHERE id = ?");
             $stmt->execute([$user_id]);
-            return false;
+            // Still return true - user can stay logged in but becomes inactive
         }
         
-        return true;
+        return true; // Session is valid for both active and inactive users
     } catch (PDOException $e) {
         error_log("Error validating user session: " . $e->getMessage());
         return false;

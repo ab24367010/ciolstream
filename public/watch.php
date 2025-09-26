@@ -1,5 +1,5 @@
 <?php
-// public/watch.php - Enhanced Video player page v0.2.0 with Series Support
+// public/watch.php - Enhanced Video player page v0.2.0 with Series Support - FIXED ACCESS
 require_once '../config/database.php';
 require_once '../includes/functions.php';
 
@@ -12,7 +12,7 @@ if (!$video_id) {
     exit;
 }
 
-// Check if user is logged in and get status
+// FIXED: Check if user is logged in and get status
 $user_id = isset($_SESSION['user_id']) ? $_SESSION['user_id'] : null;
 $user_status = null;
 $username = null;
@@ -29,8 +29,15 @@ if ($user_id) {
             $expiry_date = $user['expiry_date'];
         }
     } else {
-        unset($_SESSION['user_id']);
-        $user_id = null;
+        // Only clear session if validation truly failed (user doesn't exist)
+        // Don't clear session for expired users - they just become inactive
+        $stmt = $pdo->prepare("SELECT id FROM users WHERE id = ?");
+        $stmt->execute([$user_id]);
+        if (!$stmt->fetch()) {
+            // User doesn't exist, clear session
+            unset($_SESSION['user_id']);
+            $user_id = null;
+        }
     }
 }
 
@@ -42,11 +49,15 @@ if (!$video) {
     exit;
 }
 
-// Get subtitles if user has access
+// FIXED: Everyone can access the video content
+// Only check subtitle access separately
+$can_watch_video = true; // Everyone can watch
+
+// FIXED: Get subtitles ONLY if user has subtitle access (active users only)
 $subtitles_data = [];
 $available_subtitles = [];
 
-if (userHasSubtitleAccess($user_status)) {
+if ($user_id && userHasSubtitleAccess($user_status)) {
     $stmt = $pdo->prepare("SELECT * FROM subtitles WHERE video_id = ? ORDER BY language");
     $stmt->execute([$video_id]);
     $available_subtitles = $stmt->fetchAll();
@@ -274,7 +285,8 @@ if ($is_episode && $video['series_id']) {
                                 <span class="info-item">⭐ <?php echo number_format($video['avg_rating'], 1); ?>/5 (<?php echo $video['rating_count']; ?> ratings)</span>
                             <?php endif; ?>
                             
-                            <?php if (userHasSubtitleAccess($user_status) && !empty($available_subtitles)): ?>
+                            <!-- FIXED: Only show subtitle indicator for users who can actually see subtitles -->
+                            <?php if ($user_id && userHasSubtitleAccess($user_status) && !empty($available_subtitles)): ?>
                                 <span class="info-item subtitle-indicator">🔤 Subtitles Available</span>
                             <?php endif; ?>
                         </div>
@@ -293,7 +305,7 @@ if ($is_episode && $video['series_id']) {
                                     <?php for ($i = 1; $i <= 5; $i++): ?>
                                         <span class="star <?php echo ($video['user_rating'] && $i <= $video['user_rating']) ? 'active' : ''; ?>" 
                                               data-rating="<?php echo $i; ?>">★</span>
-                                    <?php endfor; ?>
+                                    <?php endforeach; ?>
                                 </div>
                                 <?php if ($video['user_rating']): ?>
                                     <span class="user-rating-text">Your rating: <?php echo $video['user_rating']; ?>/5</span>
@@ -304,6 +316,7 @@ if ($is_episode && $video['series_id']) {
                     </div>
                 </div>
 
+                <!-- FIXED: Video Container - ALWAYS show for everyone -->
                 <div class="video-container">
                     <div class="video-wrapper">
                         <iframe id="youtube-player" 
@@ -313,7 +326,8 @@ if ($is_episode && $video['series_id']) {
                                 allowfullscreen>
                         </iframe>
                         
-                        <?php if (userHasSubtitleAccess($user_status) && !empty($subtitles_data)): ?>
+                        <!-- FIXED: ONLY show subtitle elements for active users -->
+                        <?php if ($user_id && userHasSubtitleAccess($user_status) && !empty($subtitles_data)): ?>
                             <div id="subtitles-overlay"></div>
                             <div id="fullscreen-subtitles"></div>
                             
@@ -352,9 +366,14 @@ if ($is_episode && $video['series_id']) {
                             <p><strong>Language:</strong> <?php echo htmlspecialchars($video['language']); ?></p>
                         <?php endif; ?>
                         
-                        <?php if (!userHasSubtitleAccess($user_status)): ?>
+                        <!-- FIXED: Show appropriate messages based on user status -->
+                        <?php if (!$user_id): ?>
                             <div class="alert alert-info">
                                 <p>📝 Want to see subtitles? <a href="../login.php">Login</a> and ask admin to activate your account!</p>
+                            </div>
+                        <?php elseif ($user_status === 'inactive'): ?>
+                            <div class="alert alert-info">
+                                <p>📝 Want to see subtitles? Ask admin to activate your account for subtitle access!</p>
                             </div>
                         <?php endif; ?>
                     </div>
@@ -616,8 +635,11 @@ if ($is_episode && $video['series_id']) {
         }
 
         function onPlayerReady(event) {
+            // FIXED: Only start subtitle sync if subtitles are available
+            <?php if ($user_id && userHasSubtitleAccess($user_status) && !empty($subtitles_data)): ?>
             startSubtitleSync();
             setupFullscreenDetection();
+            <?php endif; ?>
             setupProgressTracking();
             
             <?php if ($start_time > 0): ?>
@@ -684,6 +706,8 @@ if ($is_episode && $video['series_id']) {
         }
         <?php endif; ?>
 
+        // FIXED: Only define subtitle functions if subtitles are available
+        <?php if ($user_id && userHasSubtitleAccess($user_status) && !empty($subtitles_data)): ?>
         function startSubtitleSync() {
             if (subtitleInterval) {
                 clearInterval(subtitleInterval);
@@ -753,6 +777,40 @@ if ($is_episode && $video['series_id']) {
             return '';
         }
 
+        // Subtitle language switching
+        function loadSubtitles(language) {
+            if (!language) {
+                currentSubtitles = [];
+                updateSubtitleDisplay('');
+                return;
+            }
+            
+            fetch(`../ajax/get_subtitles.php?video_id=<?php echo $video_id; ?>&lang=${language}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        currentSubtitles = data.subtitles;
+                    } else {
+                        currentSubtitles = [];
+                    }
+                })
+                .catch(error => {
+                    console.error('Subtitle loading error:', error);
+                    currentSubtitles = [];
+                });
+        }
+
+        // Subtitle controls
+        document.getElementById('subtitle-language')?.addEventListener('change', function() {
+            loadSubtitles(this.value);
+        });
+
+        document.getElementById('subtitle-sync-btn')?.addEventListener('click', function() {
+            subtitleOffset -= 100; // Adjust by -100ms
+            this.textContent = `Sync ${subtitleOffset}ms`;
+        });
+        <?php endif; ?>
+
         function setupProgressTracking() {
             setInterval(() => {
                 if (player && player.getCurrentTime && player.getDuration) {
@@ -784,27 +842,8 @@ if ($is_episode && $video['series_id']) {
             <?php endif; ?>
         }
 
-        // Subtitle language switching
-        function loadSubtitles(language) {
-            if (!language) {
-                currentSubtitles = [];
-                updateSubtitleDisplay('');
-                return;
-            }
-            
-            fetch(`../ajax/get_subtitles.php?video_id=<?php echo $video_id; ?>&lang=${language}`)
-                .then(response => response.json())
-                .then(data => {
-                    if (data.success) {
-                        currentSubtitles = data.subtitles;
-                    } else {
-                        currentSubtitles = [];
-                    }
-                })
-                .catch(error => {
-                    console.error('Subtitle loading error:', error);
-                    currentSubtitles = [];
-                });
+        function trackVideoProgress() {
+            // Called when video starts playing
         }
 
         // User interactions
@@ -919,16 +958,6 @@ if ($is_episode && $video['series_id']) {
         });
         <?php endif; ?>
 
-        // Subtitle controls
-        document.getElementById('subtitle-language')?.addEventListener('change', function() {
-            loadSubtitles(this.value);
-        });
-
-        document.getElementById('subtitle-sync-btn')?.addEventListener('click', function() {
-            subtitleOffset -= 100; // Adjust by -100ms
-            this.textContent = `Sync ${subtitleOffset}ms`;
-        });
-
         // Keyboard shortcuts
         document.addEventListener('keydown', function(e) {
             if (player && player.getPlayerState) {
@@ -1002,9 +1031,11 @@ if ($is_episode && $video['series_id']) {
 
         // Cleanup on page unload
         window.addEventListener('beforeunload', function() {
+            <?php if ($user_id && userHasSubtitleAccess($user_status)): ?>
             if (subtitleInterval) {
                 clearInterval(subtitleInterval);
             }
+            <?php endif; ?>
             if (autoplayTimer) {
                 clearTimeout(autoplayTimer);
             }
