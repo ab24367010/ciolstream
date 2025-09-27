@@ -1,8 +1,8 @@
-?php
+<?php
 // Start session first
 session_start();
 
-// public/watch.php - Enhanced Video player page v0.2.0 with Series Support - FIXED ACCESS
+// public/watch.php - Fixed Video player page v0.2.0 with proper access control
 require_once '../config/database.php';
 require_once '../includes/functions.php';
 
@@ -15,41 +15,14 @@ if (!$video_id) {
     exit;
 }
 
-// FIXED: Simple and direct session check
-$user_id = isset($_SESSION['user_id']) ? (int)$_SESSION['user_id'] : null;
-$user_status = null;
-$username = null;
-$expiry_date = null;
+// Get current user session
+$current_user = getCurrentUserSession($pdo);
+$user_id = $current_user ? $current_user['user_id'] : null;
+$user_status = $current_user ? $current_user['status'] : null;
+$username = $current_user ? $current_user['username'] : null;
+$expiry_date = $current_user ? $current_user['expiry_date'] : null;
 
-if ($user_id) {
-    try {
-        $stmt = $pdo->prepare("SELECT username, status, expiry_date FROM users WHERE id = ?");
-        $stmt->execute([$user_id]);
-        $user = $stmt->fetch();
-        
-        if ($user) {
-            $user_status = $user['status'];
-            $username = $user['username'];
-            $expiry_date = $user['expiry_date'];
-            
-            // Auto-expire if needed but keep session
-            if ($user['status'] === 'active' && $user['expiry_date'] && date('Y-m-d') > $user['expiry_date']) {
-                $stmt = $pdo->prepare("UPDATE users SET status = 'inactive' WHERE id = ?");
-                $stmt->execute([$user_id]);
-                $user_status = 'inactive';
-            }
-        } else {
-            // User doesn't exist, clear session
-            unset($_SESSION['user_id']);
-            $user_id = null;
-        }
-    } catch (PDOException $e) {
-        error_log("Database error in watch.php: " . $e->getMessage());
-        // Don't clear session on database errors
-    }
-}
-
-// Get video details with user data (including series info)
+// Get video details with user data
 $video = getVideoWithUserData($pdo, $video_id, $user_id);
 
 if (!$video) {
@@ -57,35 +30,40 @@ if (!$video) {
     exit;
 }
 
-// FIXED: Get subtitles ONLY if user has subtitle access (active users only)
+// Everyone can watch videos - no restrictions here
+// Subtitles are only available for active users
+
+// Get subtitles ONLY if user has subtitle access (active users only)
 $subtitles_data = [];
 $available_subtitles = [];
 
-// FIXED: Get subtitles ONLY if user has subtitle access (active users only)
-$subtitles_data = [];
-$available_subtitles = [];
+if ($user_id && userCanAccessSubtitles($user_status)) {
+    try {
+        $stmt = $pdo->prepare("SELECT * FROM subtitles WHERE video_id = ? ORDER BY language");
+        $stmt->execute([$video_id]);
+        $available_subtitles = $stmt->fetchAll();
 
-if ($user_id && $user_status === 'active') {
-    $stmt = $pdo->prepare("SELECT * FROM subtitles WHERE video_id = ? ORDER BY language");
-    $stmt->execute([$video_id]);
-    $available_subtitles = $stmt->fetchAll();
-
-    // Load default subtitle (English if available, otherwise first available)
-    $default_subtitle = null;
-    foreach ($available_subtitles as $subtitle) {
-        if ($subtitle['language'] === 'en') {
-            $default_subtitle = $subtitle;
-            break;
+        // Load default subtitle (English if available, otherwise first available)
+        $default_subtitle = null;
+        foreach ($available_subtitles as $subtitle) {
+            if ($subtitle['language'] === 'en') {
+                $default_subtitle = $subtitle;
+                break;
+            }
         }
-    }
 
-    if (!$default_subtitle && !empty($available_subtitles)) {
-        $default_subtitle = $available_subtitles[0];
-    }
+        if (!$default_subtitle && !empty($available_subtitles)) {
+            $default_subtitle = $available_subtitles[0];
+        }
 
-    if ($default_subtitle && file_exists($default_subtitle['srt_file_path'])) {
-        $srt_content = file_get_contents($default_subtitle['srt_file_path']);
-        $subtitles_data = parseSrtContent($srt_content);
+        if ($default_subtitle && file_exists($default_subtitle['srt_file_path'])) {
+            $srt_content = file_get_contents($default_subtitle['srt_file_path']);
+            $subtitles_data = parseSrtContent($srt_content);
+        }
+    } catch (Exception $e) {
+        error_log("Error loading subtitles: " . $e->getMessage());
+        $available_subtitles = [];
+        $subtitles_data = [];
     }
 }
 
@@ -295,8 +273,8 @@ if ($is_episode && $video['series_id']) {
                                 <span class="info-item">⭐ <?php echo number_format($video['avg_rating'], 1); ?>/5 (<?php echo $video['rating_count']; ?> ratings)</span>
                             <?php endif; ?>
 
-                            <!-- FIXED: Only show subtitle indicator for users who can actually see subtitles -->
-                            <?php if ($user_id && $user_status === 'active' && !empty($available_subtitles)): ?>
+                            <!-- Show subtitle indicator only for users who can actually see subtitles -->
+                            <?php if ($user_id && userCanAccessSubtitles($user_status) && !empty($available_subtitles)): ?>
                                 <span class="info-item subtitle-indicator">🔤 Subtitles Available</span>
                             <?php endif; ?>
                         </div>
@@ -304,20 +282,20 @@ if ($is_episode && $video['series_id']) {
                         <?php if ($user_id): ?>
                             <div class="user-actions">
                                 <button id="watchlist-btn"
-                                    class="action-btn <?php echo $video['in_watchlist'] ? 'active' : ''; ?>"
+                                    class="action-btn <?php echo isset($video['in_watchlist']) && $video['in_watchlist'] ? 'active' : ''; ?>"
                                     data-video-id="<?php echo $video_id; ?>">
-                                    <?php echo $video['in_watchlist'] ? '❤️ In Watchlist' : '🤍 Add to Watchlist'; ?>
+                                    <?php echo (isset($video['in_watchlist']) && $video['in_watchlist']) ? '❤️ In Watchlist' : '🤍 Add to Watchlist'; ?>
                                 </button>
 
                                 <div class="rating-container">
                                     <span class="rating-label">Rate this <?php echo $is_episode ? 'episode' : 'video'; ?>:</span>
                                     <div class="star-rating" data-video-id="<?php echo $video_id; ?>">
                                         <?php for ($i = 1; $i <= 5; $i++): ?>
-                                            <span class="star <?php echo ($video['user_rating'] && $i <= $video['user_rating']) ? 'active' : ''; ?>"
+                                            <span class="star <?php echo (isset($video['user_rating']) && $video['user_rating'] && $i <= $video['user_rating']) ? 'active' : ''; ?>"
                                                 data-rating="<?php echo $i; ?>">★</span>
                                         <?php endfor; ?>
                                     </div>
-                                    <?php if ($video['user_rating']): ?>
+                                    <?php if (isset($video['user_rating']) && $video['user_rating']): ?>
                                         <span class="user-rating-text">Your rating: <?php echo $video['user_rating']; ?>/5</span>
                                     <?php endif; ?>
                                 </div>
@@ -326,7 +304,7 @@ if ($is_episode && $video['series_id']) {
                     </div>
                 </div>
 
-                <!-- FIXED: Video Container - ALWAYS show for everyone -->
+                <!-- Video Container - ALWAYS show for everyone -->
                 <div class="video-container">
                     <div class="video-wrapper">
                         <iframe id="youtube-player"
@@ -336,8 +314,8 @@ if ($is_episode && $video['series_id']) {
                             allowfullscreen>
                         </iframe>
 
-                        <!-- FIXED: ONLY show subtitle elements for active users -->
-                        <?php if ($user_id && userHasSubtitleAccess($user_status) && !empty($subtitles_data)): ?>
+                        <!-- ONLY show subtitle elements for active users -->
+                        <?php if ($user_id && userCanAccessSubtitles($user_status) && !empty($subtitles_data)): ?>
                             <div id="subtitles-overlay"></div>
                             <div id="fullscreen-subtitles"></div>
 
@@ -376,7 +354,7 @@ if ($is_episode && $video['series_id']) {
                             <p><strong>Language:</strong> <?php echo htmlspecialchars($video['language']); ?></p>
                         <?php endif; ?>
 
-                        <!-- FIXED: Show appropriate messages based on user status -->
+                        <!-- Show appropriate messages based on user status -->
                         <?php if (!$user_id): ?>
                             <div class="alert alert-info">
                                 <p>📝 Want to see subtitles? <a href="../login.php">Login</a> and ask admin to activate your account!</p>
@@ -467,7 +445,7 @@ if ($is_episode && $video['series_id']) {
                         <div class="write-review-section">
                             <h3>Write a Review</h3>
                             <form id="review-form">
-                                <textarea id="review-text" placeholder="Share your thoughts about this <?php echo $is_episode ? 'episode' : 'video'; ?>..." rows="4"><?php echo $video['user_review'] ? htmlspecialchars($video['user_review']) : ''; ?></textarea>
+                                <textarea id="review-text" placeholder="Share your thoughts about this <?php echo $is_episode ? 'episode' : 'video'; ?>..." rows="4"><?php echo isset($video['user_review']) && $video['user_review'] ? htmlspecialchars($video['user_review']) : ''; ?></textarea>
                                 <button type="submit" class="btn btn-primary">Submit Review</button>
                             </form>
                         </div>
@@ -649,8 +627,8 @@ if ($is_episode && $video['series_id']) {
         }
 
         function onPlayerReady(event) {
-            // FIXED: Only start subtitle sync if subtitles are available
-            <?php if ($user_id && userHasSubtitleAccess($user_status) && !empty($subtitles_data)): ?>
+            // Only start subtitle sync if subtitles are available
+            <?php if ($user_id && userCanAccessSubtitles($user_status) && !empty($subtitles_data)): ?>
                 startSubtitleSync();
                 setupFullscreenDetection();
             <?php endif; ?>
@@ -673,7 +651,6 @@ if ($is_episode && $video['series_id']) {
 
         // Next episode functionality
         <?php if ($is_episode && $next_episode): ?>
-
             function showNextEpisodeModal() {
                 const modal = document.getElementById('next-episode-modal');
                 if (modal) {
@@ -721,9 +698,8 @@ if ($is_episode && $video['series_id']) {
             }
         <?php endif; ?>
 
-        // FIXED: Only define subtitle functions if subtitles are available
-        <?php if ($user_id && userHasSubtitleAccess($user_status) && !empty($subtitles_data)): ?>
-
+        // Only define subtitle functions if subtitles are available
+        <?php if ($user_id && userCanAccessSubtitles($user_status) && !empty($subtitles_data)): ?>
             function startSubtitleSync() {
                 if (subtitleInterval) {
                     clearInterval(subtitleInterval);
@@ -958,7 +934,7 @@ if ($is_episode && $video['series_id']) {
                             },
                             body: JSON.stringify({
                                 video_id: <?php echo $video_id; ?>,
-                                rating: <?php echo $video['user_rating'] ?: 5; ?>,
+                                rating: <?php echo isset($video['user_rating']) && $video['user_rating'] ? $video['user_rating'] : 5; ?>,
                                 review: reviewText
                             })
                         })
@@ -1052,7 +1028,7 @@ if ($is_episode && $video['series_id']) {
 
         // Cleanup on page unload
         window.addEventListener('beforeunload', function() {
-            <?php if ($user_id && userHasSubtitleAccess($user_status)): ?>
+            <?php if ($user_id && userCanAccessSubtitles($user_status)): ?>
                 if (subtitleInterval) {
                     clearInterval(subtitleInterval);
                 }

@@ -1,6 +1,8 @@
 <?php
 // config/database.php - Fixed Database configuration v0.2.0
-session_start();
+if (session_status() == PHP_SESSION_NONE) {
+    session_start();
+}
 
 // Enable debug mode (set to true for development, false for production)
 if (!defined('DEBUG_MODE')) {

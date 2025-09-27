@@ -4,31 +4,12 @@ session_start();
 require_once '../config/database.php';
 require_once '../includes/functions.php';
 
-// Check if user is logged in and get status
-$user_status = null;
-$username = null;
-$expiry_date = null;
-$user_id = null;
-
-if (isset($_SESSION['user_id'])) {
-    $user_id = $_SESSION['user_id'];
-    
-    // Validate user session
-    if (isValidUserSession($pdo, $user_id)) {
-        $stmt = $pdo->prepare("SELECT username, status, expiry_date FROM users WHERE id = ?");
-        $stmt->execute([$user_id]);
-        $user = $stmt->fetch();
-        if ($user) {
-            $user_status = $user['status'];
-            $username = $user['username'];
-            $expiry_date = $user['expiry_date'];
-        }
-    } else {
-        // Invalid session, clear it
-        unset($_SESSION['user_id']);
-        $user_id = null;
-    }
-}
+// Get current user session
+$current_user = getCurrentUserSession($pdo);
+$user_id = $current_user ? $current_user['user_id'] : null;
+$user_status = $current_user ? $current_user['status'] : null;
+$username = $current_user ? $current_user['username'] : null;
+$expiry_date = $current_user ? $current_user['expiry_date'] : null;
 
 // Get search parameters
 $search = isset($_GET['search']) ? trim($_GET['search']) : '';

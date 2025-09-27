@@ -1,5 +1,5 @@
 <?php
-// includes/functions.php - Enhanced Helper functions v0.2.1 with Series Support - RELATIONSHIP FIXED
+// includes/functions.php - Enhanced Helper functions v0.2.1 with FIXED SESSION HANDLING
 
 // Define constants
 if (!defined('SUBTITLES_DIR')) {
@@ -11,10 +11,141 @@ if (!defined('THUMBNAILS_DIR')) {
 }
 
 // =============================================================================
-// USER AUTHENTICATION AND SESSION MANAGEMENT
+// SESSION AND AUTHENTICATION FUNCTIONS
 // =============================================================================
 
-// Get user details by ID with error handling
+/**
+ * Generate secure session token
+ */
+function generateSessionToken($length = 64) {
+    return bin2hex(random_bytes($length / 2));
+}
+
+/**
+ * Validate user session using session token
+ */
+function validateUserSession($pdo, $user_id, $session_token) {
+    if (!$user_id || !$session_token) {
+        return false;
+    }
+    
+    try {
+        // Check if session exists and is valid
+        $stmt = $pdo->prepare("
+            SELECT us.*, u.status, u.expiry_date, u.username
+            FROM user_sessions us
+            JOIN users u ON us.user_id = u.id
+            WHERE us.user_id = ? AND us.session_token = ? AND us.is_active = 1 AND us.expires_at > NOW()
+        ");
+        $stmt->execute([$user_id, $session_token]);
+        $session = $stmt->fetch();
+        
+        if (!$session) {
+            return false;
+        }
+        
+        // Auto-expire user if needed but keep session valid
+        if ($session['status'] === 'active' && $session['expiry_date'] && date('Y-m-d') > $session['expiry_date']) {
+            $stmt = $pdo->prepare("UPDATE users SET status = 'inactive' WHERE id = ?");
+            $stmt->execute([$user_id]);
+            $session['status'] = 'inactive';
+        }
+        
+        // Update last activity
+        $stmt = $pdo->prepare("UPDATE user_sessions SET last_activity = NOW() WHERE id = ?");
+        $stmt->execute([$session['id']]);
+        
+        return $session;
+    } catch (PDOException $e) {
+        error_log("Session validation error: " . $e->getMessage());
+        return false;
+    }
+}
+
+/**
+ * Get current user session data
+ */
+function getCurrentUserSession($pdo) {
+    if (!isset($_SESSION['user_id']) || !isset($_SESSION['session_token'])) {
+        return null;
+    }
+    
+    $session = validateUserSession($pdo, $_SESSION['user_id'], $_SESSION['session_token']);
+    
+    if (!$session) {
+        // Invalid session, clear it
+        unset($_SESSION['user_id']);
+        unset($_SESSION['session_token']);
+        unset($_SESSION['user_status']);
+        return null;
+    }
+    
+    // Update session data
+    $_SESSION['user_status'] = $session['status'];
+    
+    return [
+        'user_id' => $session['user_id'],
+        'username' => $session['username'],
+        'status' => $session['status'],
+        'expiry_date' => $session['expiry_date']
+    ];
+}
+
+/**
+ * Check if user can access subtitles (only active users)
+ */
+function userCanAccessSubtitles($user_status) {
+    return $user_status === 'active';
+}
+
+/**
+ * Check if user can watch videos (everyone can watch)
+ */
+function userCanWatchVideos($user_status = null) {
+    // Everyone can watch videos regardless of login status
+    return true;
+}
+
+/**
+ * Clean expired sessions
+ */
+function cleanExpiredSessions($pdo) {
+    try {
+        $stmt = $pdo->prepare("DELETE FROM user_sessions WHERE expires_at < NOW() OR is_active = FALSE");
+        return $stmt->execute();
+    } catch (PDOException $e) {
+        error_log("Error cleaning expired sessions: " . $e->getMessage());
+        return false;
+    }
+}
+
+/**
+ * Logout user (invalidate session)
+ */
+function logoutUser($pdo, $user_id, $session_token) {
+    try {
+        $stmt = $pdo->prepare("UPDATE user_sessions SET is_active = 0 WHERE user_id = ? AND session_token = ?");
+        $stmt->execute([$user_id, $session_token]);
+        
+        // Clear session variables
+        unset($_SESSION['user_id']);
+        unset($_SESSION['session_token']);
+        unset($_SESSION['user_status']);
+        
+        return true;
+    } catch (PDOException $e) {
+        error_log("Logout error: " . $e->getMessage());
+        return false;
+    }
+}
+
+// =============================================================================
+// USER FUNCTIONS
+// =============================================================================
+
+/**
+ * Get user details by ID
+ */
 function getUserDetails($pdo, $user_id) {
     if (!$user_id) {
         return null;
@@ -30,138 +161,211 @@ function getUserDetails($pdo, $user_id) {
     }
 }
 
-// FIXED: Check if user session is valid - don't logout expired users
-function isValidUserSession($pdo, $user_id) {
-    if (!$user_id) {
-        return false;
-    }
-    
+/**
+ * Get user statistics
+ */
+function getUserStats($pdo, $user_id) {
     try {
-        $stmt = $pdo->prepare("SELECT status, expiry_date FROM users WHERE id = ?");
+        $stmt = $pdo->prepare("
+            SELECT 
+                COUNT(DISTINCT p.video_id) as videos_watched,
+                COUNT(DISTINCT CASE WHEN w.video_id IS NOT NULL THEN w.video_id WHEN w.series_id IS NOT NULL THEN w.series_id END) as watchlist_count,
+                COALESCE(AVG(CASE WHEN r.video_id IS NOT NULL THEN r.rating END), 0) as avg_rating_given,
+                COUNT(CASE WHEN r.video_id IS NOT NULL AND r.review IS NOT NULL AND r.review != '' THEN r.rating END) as reviews_written,
+                SUM(p.watch_count) as total_watch_count,
+                SUM(CASE WHEN p.completed = 1 THEN 1 ELSE 0 END) as completed_videos
+            FROM users u
+            LEFT JOIN user_progress p ON u.id = p.user_id
+            LEFT JOIN watchlist w ON u.id = w.user_id
+            LEFT JOIN ratings r ON u.id = r.user_id
+            WHERE u.id = ?
+        ");
         $stmt->execute([$user_id]);
-        $user = $stmt->fetch();
+        $stats = $stmt->fetch();
         
-        if (!$user) {
-            return false;
-        }
-        
-        // Check if user is expired and auto-expire them
-        if ($user['expiry_date'] && strtotime($user['expiry_date']) < time() && $user['status'] === 'active') {
-            // Auto-expire the user but DON'T invalidate the session
-            $stmt = $pdo->prepare("UPDATE users SET status = 'inactive' WHERE id = ?");
-            $stmt->execute([$user_id]);
-            // Still return true - user can stay logged in but becomes inactive
-        }
-        
-        return true; // Session is valid for both active and inactive users
+        return $stats ?: [
+            'videos_watched' => 0,
+            'watchlist_count' => 0,
+            'avg_rating_given' => 0,
+            'reviews_written' => 0,
+            'total_watch_count' => 0,
+            'completed_videos' => 0
+        ];
     } catch (PDOException $e) {
-        error_log("Error validating user session: " . $e->getMessage());
-        return false;
-    }
-}
-
-// Validate and update user session status
-function validateAndUpdateUserSession($pdo, &$user_id, &$user_status, &$username, &$expiry_date) {
-    if (!$user_id) {
-        return false;
-    }
-    
-    if (!isValidUserSession($pdo, $user_id)) {
-        // Only clear session if user doesn't exist
-        $stmt = $pdo->prepare("SELECT id FROM users WHERE id = ?");
-        $stmt->execute([$user_id]);
-        if (!$stmt->fetch()) {
-            // User doesn't exist, clear session
-            unset($_SESSION['user_id']);
-            $user_id = null;
-            $user_status = null;
-            $username = null;
-            $expiry_date = null;
-            return false;
-        }
-    }
-    
-    // Get updated user details
-    $user = getUserDetails($pdo, $user_id);
-    if ($user) {
-        $user_status = $user['status'];
-        $username = $user['username'];
-        $expiry_date = $user['expiry_date'];
-        return true;
-    }
-    
-    return false;
-}
-
-// FIXED: Check if user has access to subtitles (only active users)
-function userHasSubtitleAccess($user_status) {
-    return $user_status === 'active';
-}
-
-// FIXED: Check if user has access to content (everyone can watch)
-function userHasContentAccess($user_status) {
-    // Everyone can watch content regardless of login status
-    // Guests (null/empty status), active users, and inactive users can all watch
-    return true;
-}
-
-// Check if maintenance mode is enabled
-function checkMaintenanceMode($pdo) {
-    if (isMaintenanceMode($pdo)) {
-        header('Location: maintenance.php');
-        exit;
+        error_log("Error getting user stats: " . $e->getMessage());
+        return [
+            'videos_watched' => 0,
+            'watchlist_count' => 0,
+            'avg_rating_given' => 0,
+            'reviews_written' => 0,
+            'total_watch_count' => 0,
+            'completed_videos' => 0
+        ];
     }
 }
 
 // =============================================================================
-// INPUT VALIDATION AND SANITIZATION
+// VIDEO FUNCTIONS
 // =============================================================================
 
-// Sanitize and validate user input
-function sanitizeInput($input, $type = 'string') {
-    if (is_null($input)) {
-        return null;
-    }
-    
-    $input = trim($input);
-    
-    switch ($type) {
-        case 'email':
-            return filter_var($input, FILTER_SANITIZE_EMAIL);
-        case 'int':
-            return filter_var($input, FILTER_SANITIZE_NUMBER_INT);
-        case 'float':
-            return filter_var($input, FILTER_SANITIZE_NUMBER_FLOAT, FILTER_FLAG_ALLOW_FRACTION);
-        case 'url':
-            return filter_var($input, FILTER_SANITIZE_URL);
-        default:
-            return htmlspecialchars($input, ENT_QUOTES | ENT_HTML5, 'UTF-8');
-    }
-}
-
-// Validate video ID and get basic info
-function validateVideoId($pdo, $video_id) {
-    $video_id = (int)$video_id;
-    
-    if (!$video_id) {
-        return null;
-    }
-    
+/**
+ * Get video with user-specific data
+ */
+function getVideoWithUserData($pdo, $video_id, $user_id = null) {
     try {
-        $stmt = $pdo->prepare("SELECT id, title, status FROM videos WHERE id = ? AND status = 'active'");
-        $stmt->execute([$video_id]);
-        return $stmt->fetch();
+        $sql = "
+            SELECT v.*,
+                   COALESCE(AVG(r.rating), 0) as avg_rating,
+                   COUNT(r.rating) as rating_count,
+                   GROUP_CONCAT(DISTINCT g.name ORDER BY g.name SEPARATOR ', ') as genres,
+                   GROUP_CONCAT(DISTINCT g.color_code ORDER BY g.name SEPARATOR ',') as genre_colors,
+                   s.title as series_title,
+                   se.season_number,
+                   se.title as season_title";
+        
+        $params = [$video_id];
+        
+        if ($user_id) {
+            $sql .= ",
+                   MAX(up.progress_seconds) as progress_seconds,
+                   MAX(up.completed) as completed,
+                   MAX(up.watch_count) as watch_count,
+                   MAX(ur.rating) as user_rating,
+                   MAX(ur.review) as user_review,
+                   MAX(CASE WHEN w.user_id IS NOT NULL THEN 1 ELSE 0 END) as in_watchlist,
+                   MAX(w.priority) as watchlist_priority,
+                   MAX(w.notes) as watchlist_notes";
+        }
+
+        $sql .= "
+            FROM videos v
+            LEFT JOIN ratings r ON v.id = r.video_id
+            LEFT JOIN video_genres vg ON v.id = vg.video_id
+            LEFT JOIN genres g ON vg.genre_id = g.id
+            LEFT JOIN series s ON v.series_id = s.id
+            LEFT JOIN seasons se ON v.season_id = se.id";
+
+        if ($user_id) {
+            $sql .= "
+            LEFT JOIN user_progress up ON v.id = up.video_id AND up.user_id = ?
+            LEFT JOIN ratings ur ON v.id = ur.video_id AND ur.user_id = ?
+            LEFT JOIN watchlist w ON v.id = w.video_id AND w.user_id = ?";
+            $params = array_merge($params, [$user_id, $user_id, $user_id]);
+        }
+
+        $sql .= "
+            WHERE v.id = ? AND v.status = 'active'
+            GROUP BY v.id, v.title, v.content_type, v.series_id, v.season_id, v.episode_number,
+                     v.genre, v.youtube_id, v.description, v.thumbnail_url, v.duration_seconds,
+                     v.release_year, v.imdb_rating, v.language, v.director, v.cast, v.tags,
+                     v.view_count, v.featured, v.status, v.created_at, v.updated_at,
+                     s.title, se.season_number, se.title";
+        
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute($params);
+        $video = $stmt->fetch();
+        
+        if ($video && $video['content_type'] === 'episode') {
+            // Get other episodes in the same season
+            $stmt = $pdo->prepare("
+                SELECT v.id, v.title, v.episode_number, v.duration_seconds,
+                       CASE WHEN up.completed = 1 THEN 1 ELSE 0 END as completed
+                FROM videos v
+                LEFT JOIN user_progress up ON v.id = up.video_id AND up.user_id = ?
+                WHERE v.season_id = ? AND v.content_type = 'episode' AND v.status = 'active'
+                ORDER BY v.episode_number ASC
+            ");
+            $stmt->execute([$user_id ?: 0, $video['season_id']]);
+            $video['season_episodes'] = $stmt->fetchAll();
+            
+            // Get all seasons for the series
+            $stmt = $pdo->prepare("
+                SELECT se.*, COUNT(v.id) as episode_count
+                FROM seasons se
+                LEFT JOIN videos v ON se.id = v.season_id AND v.status = 'active'
+                WHERE se.series_id = ? AND se.status = 'active'
+                GROUP BY se.id
+                ORDER BY se.season_number ASC
+            ");
+            $stmt->execute([$video['series_id']]);
+            $video['all_seasons'] = $stmt->fetchAll();
+        }
+        
+        return $video;
     } catch (PDOException $e) {
-        error_log("Error validating video ID: " . $e->getMessage());
-        return null;
+        error_log("Error getting video with user data: " . $e->getMessage());
+        return false;
+    }
+}
+
+/**
+ * Get video recommendations
+ */
+function getVideoRecommendations($pdo, $user_id = null, $current_video_id = null, $limit = 6) {
+    try {
+        if ($user_id) {
+            // Get recommendations based on user's watch history and ratings
+            $stmt = $pdo->prepare("
+                SELECT v.*, 'movie' as item_type,
+                       COALESCE(AVG(r.rating), 0) as avg_rating,
+                       COUNT(r.rating) as rating_count,
+                       GROUP_CONCAT(DISTINCT g.name ORDER BY g.name SEPARATOR ', ') as genres
+                FROM videos v
+                LEFT JOIN ratings r ON v.id = r.video_id
+                LEFT JOIN video_genres vg ON v.id = vg.video_id
+                LEFT JOIN genres g ON vg.genre_id = g.id
+                WHERE v.status = 'active'
+                AND v.id != COALESCE(?, 0)
+                AND v.content_type = 'movie'
+                AND v.id NOT IN (
+                    SELECT DISTINCT up2.video_id
+                    FROM user_progress up2
+                    WHERE up2.user_id = ? AND up2.completed = 1
+                )
+                GROUP BY v.id, v.title, v.content_type, v.series_id, v.season_id, v.episode_number,
+                         v.genre, v.youtube_id, v.description, v.thumbnail_url, v.duration_seconds,
+                         v.release_year, v.imdb_rating, v.language, v.director, v.cast, v.tags,
+                         v.view_count, v.featured, v.status, v.created_at, v.updated_at
+                ORDER BY COALESCE(AVG(r.rating), 0) DESC, v.view_count DESC
+                LIMIT ?
+            ");
+            $stmt->execute([$current_video_id, $user_id, $limit]);
+        } else {
+            // Get general recommendations (popular and well-rated movies)
+            $stmt = $pdo->prepare("
+                SELECT v.*, 'movie' as item_type,
+                       COALESCE(AVG(r.rating), 0) as avg_rating,
+                       COUNT(r.rating) as rating_count,
+                       GROUP_CONCAT(DISTINCT g.name ORDER BY g.name SEPARATOR ', ') as genres
+                FROM videos v
+                LEFT JOIN ratings r ON v.id = r.video_id
+                LEFT JOIN video_genres vg ON v.id = vg.video_id
+                LEFT JOIN genres g ON vg.genre_id = g.id
+                WHERE v.status = 'active' AND v.id != COALESCE(?, 0) AND v.content_type = 'movie'
+                GROUP BY v.id, v.title, v.content_type, v.series_id, v.season_id, v.episode_number,
+                         v.genre, v.youtube_id, v.description, v.thumbnail_url, v.duration_seconds,
+                         v.release_year, v.imdb_rating, v.language, v.director, v.cast, v.tags,
+                         v.view_count, v.featured, v.status, v.created_at, v.updated_at
+                ORDER BY v.view_count DESC, avg_rating DESC
+                LIMIT ?
+            ");
+            $stmt->execute([$current_video_id, $limit]);
+        }
+        
+        return $stmt->fetchAll();
+    } catch (PDOException $e) {
+        error_log("Error getting video recommendations: " . $e->getMessage());
+        return [];
     }
 }
 
 // =============================================================================
-// SUBTITLE MANAGEMENT
+// SUBTITLE FUNCTIONS
 // =============================================================================
 
-// Parse SRT file content into array with enhanced error handling
+/**
+ * Parse SRT file content into array
+ */
 function parseSrtContent($srt_content) {
     $subtitles = [];
     $srt_content = trim($srt_content);
@@ -212,60 +416,13 @@ function parseSrtContent($srt_content) {
     return $subtitles;
 }
 
-// Get available subtitles for a video with access control
-function getAvailableSubtitles($pdo, $video_id, $user_status = null) {
-    if (!userHasSubtitleAccess($user_status)) {
-        return [];
-    }
-    
-    try {
-        $stmt = $pdo->prepare("SELECT * FROM subtitles WHERE video_id = ? ORDER BY language");
-        $stmt->execute([$video_id]);
-        return $stmt->fetchAll();
-    } catch (PDOException $e) {
-        error_log("Error getting subtitles: " . $e->getMessage());
-        return [];
-    }
-}
-
-// Load subtitle data for video with access control
-function loadSubtitleData($pdo, $video_id, $user_status = null, $preferred_language = 'en') {
-    $available_subtitles = getAvailableSubtitles($pdo, $video_id, $user_status);
-    
-    if (empty($available_subtitles)) {
-        return ['subtitles_data' => [], 'available_subtitles' => []];
-    }
-    
-    // Load default subtitle (preferred language if available, otherwise first available)
-    $default_subtitle = null;
-    foreach ($available_subtitles as $subtitle) {
-        if ($subtitle['language'] === $preferred_language) {
-            $default_subtitle = $subtitle;
-            break;
-        }
-    }
-    
-    if (!$default_subtitle) {
-        $default_subtitle = $available_subtitles[0];
-    }
-    
-    $subtitles_data = [];
-    if ($default_subtitle && file_exists($default_subtitle['srt_file_path'])) {
-        $srt_content = file_get_contents($default_subtitle['srt_file_path']);
-        $subtitles_data = parseSrtContent($srt_content);
-    }
-    
-    return [
-        'subtitles_data' => $subtitles_data,
-        'available_subtitles' => $available_subtitles
-    ];
-}
-
 // =============================================================================
-// VIDEO AND SERIES MANAGEMENT
+// UTILITY FUNCTIONS
 // =============================================================================
 
-// Get video thumbnail from YouTube with fallback options
+/**
+ * Get YouTube thumbnail URL
+ */
 function getYouTubeThumbnail($youtube_id, $quality = 'maxresdefault') {
     $qualities = ['maxresdefault', 'hqdefault', 'mqdefault', 'sddefault', 'default'];
     
@@ -276,7 +433,45 @@ function getYouTubeThumbnail($youtube_id, $quality = 'maxresdefault') {
     return "https://i.ytimg.com/vi/{$youtube_id}/{$quality}.jpg";
 }
 
-// Enhanced filename sanitization
+/**
+ * Generate YouTube embed URL
+ */
+function getYouTubeEmbedUrl($youtube_id, $params = []) {
+    $default_params = [
+        'enablejsapi' => 1,
+        'modestbranding' => 1,
+        'rel' => 0,
+        'showinfo' => 0,
+        'fs' => 1,
+        'cc_load_policy' => 0
+    ];
+    
+    $params = array_merge($default_params, $params);
+    $query_string = http_build_query($params);
+    
+    return "https://www.youtube.com/embed/{$youtube_id}?{$query_string}";
+}
+
+/**
+ * Format duration from seconds
+ */
+function formatDuration($seconds) {
+    if ($seconds < 60) {
+        return $seconds . 's';
+    } elseif ($seconds < 3600) {
+        $minutes = floor($seconds / 60);
+        $remainingSeconds = $seconds % 60;
+        return $minutes . 'm' . ($remainingSeconds > 0 ? ' ' . $remainingSeconds . 's' : '');
+    } else {
+        $hours = floor($seconds / 3600);
+        $minutes = floor(($seconds % 3600) / 60);
+        return $hours . 'h' . ($minutes > 0 ? ' ' . $minutes . 'm' : '');
+    }
+}
+
+/**
+ * Sanitize filename
+ */
 function sanitizeFilename($filename) {
     // Remove path information
     $filename = basename($filename);
@@ -295,814 +490,9 @@ function sanitizeFilename($filename) {
     return $filename;
 }
 
-// Get video with user-specific data (enhanced for series support)
-function getVideoWithUserData($pdo, $video_id, $user_id = null) {
-    try {
-        $sql = "
-            SELECT v.*,
-                   COALESCE(AVG(r.rating), 0) as avg_rating,
-                   COUNT(r.rating) as rating_count,
-                   GROUP_CONCAT(DISTINCT g.name ORDER BY g.name SEPARATOR ', ') as genres,
-                   GROUP_CONCAT(DISTINCT g.color_code ORDER BY g.name SEPARATOR ',') as genre_colors,
-                   s.title as series_title,
-                   se.season_number,
-                   se.title as season_title";
-        
-        $params = [$video_id];
-        
-        if ($user_id) {
-            $sql .= ",
-                   up.progress_seconds,
-                   up.completed,
-                   up.watch_count,
-                   ur.rating as user_rating,
-                   ur.review as user_review,
-                   CASE WHEN w.user_id IS NOT NULL THEN 1 ELSE 0 END as in_watchlist,
-                   w.priority as watchlist_priority,
-                   w.notes as watchlist_notes";
-        }
-        
-        $sql .= "
-            FROM videos v
-            LEFT JOIN ratings r ON v.id = r.video_id
-            LEFT JOIN video_genres vg ON v.id = vg.video_id
-            LEFT JOIN genres g ON vg.genre_id = g.id
-            LEFT JOIN series s ON v.series_id = s.id
-            LEFT JOIN seasons se ON v.season_id = se.id";
-        
-        if ($user_id) {
-            $sql .= "
-            LEFT JOIN user_progress up ON v.id = up.video_id AND up.user_id = ?
-            LEFT JOIN ratings ur ON v.id = ur.video_id AND ur.user_id = ?
-            LEFT JOIN watchlist w ON v.id = w.video_id AND w.user_id = ?";
-            $params = array_merge($params, [$user_id, $user_id, $user_id]);
-        }
-        
-        $sql .= "
-            WHERE v.id = ? AND v.status = 'active'
-            GROUP BY v.id";
-        
-        $stmt = $pdo->prepare($sql);
-        $stmt->execute($params);
-        $video = $stmt->fetch();
-        
-        if ($video && $video['content_type'] === 'episode') {
-            // Get other episodes in the same season
-            $stmt = $pdo->prepare("
-                SELECT v.id, v.title, v.episode_number, v.duration_seconds,
-                       CASE WHEN up.completed = 1 THEN 1 ELSE 0 END as completed
-                FROM videos v
-                LEFT JOIN user_progress up ON v.id = up.video_id AND up.user_id = ?
-                WHERE v.season_id = ? AND v.content_type = 'episode' AND v.status = 'active'
-                ORDER BY v.episode_number ASC
-            ");
-            $stmt->execute([$user_id ?: 0, $video['season_id']]);
-            $video['season_episodes'] = $stmt->fetchAll();
-            
-            // Get all seasons for the series
-            $stmt = $pdo->prepare("
-                SELECT se.*, COUNT(v.id) as episode_count
-                FROM seasons se
-                LEFT JOIN videos v ON se.id = v.season_id AND v.status = 'active'
-                WHERE se.series_id = ? AND se.status = 'active'
-                GROUP BY se.id
-                ORDER BY se.season_number ASC
-            ");
-            $stmt->execute([$video['series_id']]);
-            $video['all_seasons'] = $stmt->fetchAll();
-        }
-        
-        return $video;
-    } catch (PDOException $e) {
-        error_log("Error getting video with user data: " . $e->getMessage());
-        return false;
-    }
-}
-
-// Get series episode navigation data
-function getEpisodeNavigation($pdo, $video, $series_info = null, $current_season = null) {
-    if ($video['content_type'] !== 'episode' || !$video['series_id']) {
-        return ['next_episode' => null, 'prev_episode' => null];
-    }
-    
-    try {
-        // Get series info if not provided
-        if (!$series_info) {
-            $stmt = $pdo->prepare("SELECT * FROM series WHERE id = ?");
-            $stmt->execute([$video['series_id']]);
-            $series_info = $stmt->fetch();
-        }
-        
-        // Get current season info if not provided
-        if (!$current_season) {
-            $stmt = $pdo->prepare("SELECT * FROM seasons WHERE id = ?");
-            $stmt->execute([$video['season_id']]);
-            $current_season = $stmt->fetch();
-        }
-        
-        // Get next episode
-        $stmt = $pdo->prepare("
-            SELECT * FROM videos 
-            WHERE season_id = ? AND episode_number > ? AND content_type = 'episode' AND status = 'active'
-            ORDER BY episode_number ASC 
-            LIMIT 1
-        ");
-        $stmt->execute([$video['season_id'], $video['episode_number']]);
-        $next_episode = $stmt->fetch();
-        
-        // If no next episode in current season, try next season
-        if (!$next_episode && $series_info) {
-            $stmt = $pdo->prepare("
-                SELECT v.* FROM videos v
-                JOIN seasons s ON v.season_id = s.id
-                WHERE s.series_id = ? AND s.season_number > ? AND v.content_type = 'episode' AND v.status = 'active'
-                ORDER BY s.season_number ASC, v.episode_number ASC
-                LIMIT 1
-            ");
-            $stmt->execute([$series_info['id'], $current_season['season_number']]);
-            $next_episode = $stmt->fetch();
-        }
-        
-        // Get previous episode
-        $stmt = $pdo->prepare("
-            SELECT * FROM videos 
-            WHERE season_id = ? AND episode_number < ? AND content_type = 'episode' AND status = 'active'
-            ORDER BY episode_number DESC 
-            LIMIT 1
-        ");
-        $stmt->execute([$video['season_id'], $video['episode_number']]);
-        $prev_episode = $stmt->fetch();
-        
-        // If no previous episode in current season, try previous season
-        if (!$prev_episode && $series_info) {
-            $stmt = $pdo->prepare("
-                SELECT v.* FROM videos v
-                JOIN seasons s ON v.season_id = s.id
-                WHERE s.series_id = ? AND s.season_number < ? AND v.content_type = 'episode' AND v.status = 'active'
-                ORDER BY s.season_number DESC, v.episode_number DESC
-                LIMIT 1
-            ");
-            $stmt->execute([$series_info['id'], $current_season['season_number']]);
-            $prev_episode = $stmt->fetch();
-        }
-        
-        return [
-            'next_episode' => $next_episode,
-            'prev_episode' => $prev_episode,
-            'series_info' => $series_info,
-            'current_season' => $current_season
-        ];
-        
-    } catch (PDOException $e) {
-        error_log("Error getting episode navigation: " . $e->getMessage());
-        return ['next_episode' => null, 'prev_episode' => null];
-    }
-}
-
-// Get video reviews
-function getVideoReviews($pdo, $video_id, $limit = 10) {
-    try {
-        $stmt = $pdo->prepare("
-            SELECT r.*, u.username 
-            FROM ratings r 
-            JOIN users u ON r.user_id = u.id 
-            WHERE r.video_id = ? AND r.review IS NOT NULL AND r.review != ''
-            ORDER BY r.created_at DESC 
-            LIMIT ?
-        ");
-        $stmt->execute([$video_id, $limit]);
-        return $stmt->fetchAll();
-    } catch (PDOException $e) {
-        error_log("Error getting video reviews: " . $e->getMessage());
-        return [];
-    }
-}
-
-// =============================================================================
-// SEARCH AND CONTENT DISCOVERY
-// =============================================================================
-
-// Get all available genres from database
-function getGenres($pdo) {
-    try {
-        $stmt = $pdo->prepare("SELECT name FROM genres WHERE is_active = TRUE ORDER BY display_order, name");
-        $stmt->execute();
-        return $stmt->fetchAll(PDO::FETCH_COLUMN);
-    } catch (PDOException $e) {
-        error_log("Error fetching genres: " . $e->getMessage());
-        return [];
-    }
-}
-
-// Enhanced search function with series support
-function searchContent($pdo, $search = '', $genre = '', $content_type = '', $filters = []) {
-    try {
-        if ($content_type === 'series') {
-            return searchSeries($pdo, $search, $genre, $filters);
-        } else {
-            return searchVideos($pdo, $search, $genre, $filters);
-        }
-    } catch (PDOException $e) {
-        error_log("Error searching content: " . $e->getMessage());
-        return [];
-    }
-}
-
-// Enhanced video search with multiple filters
-function searchVideos($pdo, $search = '', $genre = '', $filters = []) {
-    try {
-        $sql = "
-            SELECT DISTINCT v.*, 
-                   COALESCE(AVG(r.rating), 0) as avg_rating,
-                   COUNT(r.rating) as rating_count,
-                   GROUP_CONCAT(DISTINCT g.name ORDER BY g.name SEPARATOR ', ') as genres,
-                   s.title as series_title,
-                   se.season_number,
-                   CASE 
-                       WHEN v.content_type = 'episode' THEN CONCAT(s.title, ' - S', se.season_number, 'E', v.episode_number, ': ', v.title)
-                       ELSE v.title
-                   END as display_title
-            FROM videos v
-            LEFT JOIN ratings r ON v.id = r.video_id
-            LEFT JOIN video_genres vg ON v.id = vg.video_id
-            LEFT JOIN genres g ON vg.genre_id = g.id
-            LEFT JOIN series s ON v.series_id = s.id
-            LEFT JOIN seasons se ON v.season_id = se.id
-            WHERE v.status = 'active'
-        ";
-        
-        $params = [];
-        
-        if (!empty($search)) {
-            $sql .= " AND (v.title LIKE ? OR v.description LIKE ? OR v.director LIKE ? OR v.cast LIKE ? OR s.title LIKE ?)";
-            $searchParam = '%' . $search . '%';
-            $params = array_merge($params, [$searchParam, $searchParam, $searchParam, $searchParam, $searchParam]);
-        }
-        
-        if (!empty($genre)) {
-            $sql .= " AND EXISTS (
-                SELECT 1 FROM video_genres vg2 
-                JOIN genres g2 ON vg2.genre_id = g2.id 
-                WHERE vg2.video_id = v.id AND g2.name = ?
-            )";
-            $params[] = $genre;
-        }
-        
-        if (!empty($filters['content_type'])) {
-            $sql .= " AND v.content_type = ?";
-            $params[] = $filters['content_type'];
-        }
-        
-        if (!empty($filters['year_from'])) {
-            $sql .= " AND v.release_year >= ?";
-            $params[] = $filters['year_from'];
-        }
-        
-        if (!empty($filters['year_to'])) {
-            $sql .= " AND v.release_year <= ?";
-            $params[] = $filters['year_to'];
-        }
-        
-        $sql .= " GROUP BY v.id";
-        
-        if (!empty($filters['min_rating'])) {
-            $sql .= " HAVING avg_rating >= ?";
-            $params[] = $filters['min_rating'];
-        }
-        
-        // Default ordering
-        $orderBy = " ORDER BY ";
-        switch ($filters['sort'] ?? 'newest') {
-            case 'oldest':
-                $orderBy .= "v.created_at ASC";
-                break;
-            case 'title_asc':
-                $orderBy .= "display_title ASC";
-                break;
-            case 'title_desc':
-                $orderBy .= "display_title DESC";
-                break;
-            case 'rating':
-                $orderBy .= "avg_rating DESC, rating_count DESC";
-                break;
-            case 'popular':
-                $orderBy .= "v.view_count DESC";
-                break;
-            case 'featured':
-                $orderBy .= "v.featured DESC, v.created_at DESC";
-                break;
-            default:
-                $orderBy .= "v.content_type ASC, s.title ASC, se.season_number ASC, v.episode_number ASC, v.created_at DESC";
-        }
-        
-        $sql .= $orderBy;
-        
-        if (!empty($filters['limit'])) {
-            $sql .= " LIMIT ?";
-            $params[] = $filters['limit'];
-        }
-        
-        $stmt = $pdo->prepare($sql);
-        $stmt->execute($params);
-        return $stmt->fetchAll();
-        
-    } catch (PDOException $e) {
-        error_log("Error searching videos: " . $e->getMessage());
-        return [];
-    }
-}
-
-// Search series function
-function searchSeries($pdo, $search = '', $genre = '', $filters = []) {
-    try {
-        $sql = "
-            SELECT DISTINCT s.*, 
-                   COALESCE(AVG(r.rating), 0) as avg_rating,
-                   COUNT(r.rating) as rating_count,
-                   GROUP_CONCAT(DISTINCT g.name ORDER BY g.name SEPARATOR ', ') as genres,
-                   COUNT(DISTINCT se.id) as season_count,
-                   COUNT(DISTINCT v.id) as episode_count
-            FROM series s
-            LEFT JOIN ratings r ON s.id = r.series_id
-            LEFT JOIN series_genres sg ON s.id = sg.series_id
-            LEFT JOIN genres g ON sg.genre_id = g.id
-            LEFT JOIN seasons se ON s.id = se.series_id
-            LEFT JOIN videos v ON s.id = v.series_id AND v.content_type = 'episode'
-            WHERE s.status = 'active'
-        ";
-        
-        $params = [];
-        
-        if (!empty($search)) {
-            $sql .= " AND (s.title LIKE ? OR s.description LIKE ? OR s.director LIKE ? OR s.cast LIKE ?)";
-            $searchParam = '%' . $search . '%';
-            $params = array_merge($params, [$searchParam, $searchParam, $searchParam, $searchParam]);
-        }
-        
-        if (!empty($genre)) {
-            $sql .= " AND EXISTS (
-                SELECT 1 FROM series_genres sg2 
-                JOIN genres g2 ON sg2.genre_id = g2.id 
-                WHERE sg2.series_id = s.id AND g2.name = ?
-            )";
-            $params[] = $genre;
-        }
-        
-        $sql .= " GROUP BY s.id ORDER BY s.featured DESC, s.created_at DESC";
-        
-        if (!empty($filters['limit'])) {
-            $sql .= " LIMIT ?";
-            $params[] = $filters['limit'];
-        }
-        
-        $stmt = $pdo->prepare($sql);
-        $stmt->execute($params);
-        return $stmt->fetchAll();
-        
-    } catch (PDOException $e) {
-        error_log("Error searching series: " . $e->getMessage());
-        return [];
-    }
-}
-
-// Get series with seasons and episodes
-function getSeriesWithEpisodes($pdo, $series_id, $user_id = null) {
-    try {
-        // Get series info
-        $stmt = $pdo->prepare("
-            SELECT s.*, 
-                   COALESCE(AVG(r.rating), 0) as avg_rating,
-                   COUNT(r.rating) as rating_count,
-                   GROUP_CONCAT(DISTINCT g.name ORDER BY g.name SEPARATOR ', ') as genres
-            FROM series s
-            LEFT JOIN ratings r ON s.id = r.series_id
-            LEFT JOIN series_genres sg ON s.id = sg.series_id
-            LEFT JOIN genres g ON sg.genre_id = g.id
-            WHERE s.id = ? AND s.status = 'active'
-            GROUP BY s.id
-        ");
-        $stmt->execute([$series_id]);
-        $series = $stmt->fetch();
-        
-        if (!$series) {
-            return null;
-        }
-        
-        // Get seasons with episodes
-        $stmt = $pdo->prepare("
-            SELECT se.*, COUNT(v.id) as episode_count
-            FROM seasons se
-            LEFT JOIN videos v ON se.id = v.season_id AND v.status = 'active'
-            WHERE se.series_id = ? AND se.status = 'active'
-            GROUP BY se.id
-            ORDER BY se.season_number ASC
-        ");
-        $stmt->execute([$series_id]);
-        $seasons = $stmt->fetchAll();
-        
-        foreach ($seasons as &$season) {
-            // Get episodes for this season
-            $episodeSql = "
-                SELECT v.*, 
-                       COALESCE(AVG(r.rating), 0) as avg_rating,
-                       COUNT(r.rating) as rating_count";
-            
-            $params = [$season['id']];
-            
-            if ($user_id) {
-                $episodeSql .= ",
-                       up.progress_seconds,
-                       up.completed,
-                       up.watch_count";
-            }
-            
-            $episodeSql .= "
-                FROM videos v
-                LEFT JOIN ratings r ON v.id = r.video_id";
-            
-            if ($user_id) {
-                $episodeSql .= "
-                LEFT JOIN user_progress up ON v.id = up.video_id AND up.user_id = ?";
-                $params[] = $user_id;
-            }
-            
-            $episodeSql .= "
-                WHERE v.season_id = ? AND v.content_type = 'episode' AND v.status = 'active'
-                GROUP BY v.id
-                ORDER BY v.episode_number ASC
-            ";
-            
-            if ($user_id) {
-                array_unshift($params, $user_id);
-            }
-            
-            $episodeStmt = $pdo->prepare($episodeSql);
-            $episodeStmt->execute($params);
-            $season['episodes'] = $episodeStmt->fetchAll();
-        }
-        
-        $series['seasons'] = $seasons;
-        return $series;
-        
-    } catch (PDOException $e) {
-        error_log("Error getting series with episodes: " . $e->getMessage());
-        return null;
-    }
-}
-
-// Get featured content (videos and series)
-function getFeaturedContent($pdo, $limit = 6) {
-    try {
-        $content = [];
-        
-        // Get featured movies
-        $stmt = $pdo->prepare("
-            SELECT v.*, 'movie' as item_type,
-                   COALESCE(AVG(r.rating), 0) as avg_rating,
-                   COUNT(r.rating) as rating_count,
-                   GROUP_CONCAT(DISTINCT g.name ORDER BY g.name SEPARATOR ', ') as genres
-            FROM videos v
-            LEFT JOIN ratings r ON v.id = r.video_id
-            LEFT JOIN video_genres vg ON v.id = vg.video_id
-            LEFT JOIN genres g ON vg.genre_id = g.id
-            WHERE v.status = 'active' AND v.featured = TRUE AND v.content_type = 'movie'
-            GROUP BY v.id
-            ORDER BY v.created_at DESC
-            LIMIT ?
-        ");
-        $stmt->execute([max(1, $limit / 2)]);
-        $content = array_merge($content, $stmt->fetchAll());
-        
-        // Get featured series
-        $stmt = $pdo->prepare("
-            SELECT s.*, 'series' as item_type,
-                   COALESCE(AVG(r.rating), 0) as avg_rating,
-                   COUNT(r.rating) as rating_count,
-                   GROUP_CONCAT(DISTINCT g.name ORDER BY g.name SEPARATOR ', ') as genres,
-                   COUNT(DISTINCT se.id) as season_count,
-                   COUNT(DISTINCT v.id) as episode_count
-            FROM series s
-            LEFT JOIN ratings r ON s.id = r.series_id
-            LEFT JOIN series_genres sg ON s.id = sg.series_id
-            LEFT JOIN genres g ON sg.genre_id = g.id
-            LEFT JOIN seasons se ON s.id = se.series_id
-            LEFT JOIN videos v ON s.id = v.series_id AND v.content_type = 'episode'
-            WHERE s.status = 'active' AND s.featured = TRUE
-            GROUP BY s.id
-            ORDER BY s.created_at DESC
-            LIMIT ?
-        ");
-        $stmt->execute([max(1, $limit / 2)]);
-        $content = array_merge($content, $stmt->fetchAll());
-        
-        // Sort by created_at and limit total results
-        usort($content, function($a, $b) {
-            return strtotime($b['created_at']) - strtotime($a['created_at']);
-        });
-        
-        return array_slice($content, 0, $limit);
-    } catch (PDOException $e) {
-        error_log("Error getting featured content: " . $e->getMessage());
-        return [];
-    }
-}
-
-// Get video recommendations (enhanced with series support)
-function getVideoRecommendations($pdo, $user_id = null, $current_video_id = null, $limit = 6) {
-    try {
-        if ($user_id) {
-            // Get recommendations based on user's watch history and ratings
-            $stmt = $pdo->prepare("
-                SELECT DISTINCT v.*, 'movie' as item_type,
-                       COALESCE(AVG(r.rating), 0) as avg_rating,
-                       COUNT(r.rating) as rating_count,
-                       GROUP_CONCAT(DISTINCT g.name ORDER BY g.name SEPARATOR ', ') as genres
-                FROM videos v
-                LEFT JOIN ratings r ON v.id = r.video_id
-                LEFT JOIN video_genres vg ON v.id = vg.video_id
-                LEFT JOIN genres g ON vg.genre_id = g.id
-                WHERE v.status = 'active' 
-                AND v.id != COALESCE(?, 0)
-                AND v.content_type = 'movie'
-                AND EXISTS (
-                    SELECT 1 FROM video_genres vg2
-                    JOIN genres g2 ON vg2.genre_id = g2.id
-                    WHERE vg2.video_id = v.id
-                    AND g2.name IN (
-                        SELECT DISTINCT g3.name
-                        FROM user_progress up
-                        JOIN video_genres vg3 ON up.video_id = vg3.video_id
-                        JOIN genres g3 ON vg3.genre_id = g3.id
-                        WHERE up.user_id = ?
-                        ORDER BY up.last_watched DESC
-                        LIMIT 5
-                    )
-                )
-                AND v.id NOT IN (
-                    SELECT DISTINCT up2.video_id 
-                    FROM user_progress up2 
-                    WHERE up2.user_id = ? AND up2.completed = 1
-                )
-                GROUP BY v.id
-                ORDER BY avg_rating DESC, v.view_count DESC
-                LIMIT ?
-            ");
-            $stmt->execute([$current_video_id, $user_id, $user_id, $limit]);
-        } else {
-            // Get general recommendations (popular and well-rated movies)
-            $stmt = $pdo->prepare("
-                SELECT v.*, 'movie' as item_type,
-                       COALESCE(AVG(r.rating), 0) as avg_rating,
-                       COUNT(r.rating) as rating_count,
-                       GROUP_CONCAT(DISTINCT g.name ORDER BY g.name SEPARATOR ', ') as genres
-                FROM videos v
-                LEFT JOIN ratings r ON v.id = r.video_id
-                LEFT JOIN video_genres vg ON v.id = vg.video_id
-                LEFT JOIN genres g ON vg.genre_id = g.id
-                WHERE v.status = 'active' AND v.id != COALESCE(?, 0) AND v.content_type = 'movie'
-                GROUP BY v.id
-                ORDER BY v.view_count DESC, avg_rating DESC
-                LIMIT ?
-            ");
-            $stmt->execute([$current_video_id, $limit]);
-        }
-        
-        return $stmt->fetchAll();
-    } catch (PDOException $e) {
-        error_log("Error getting video recommendations: " . $e->getMessage());
-        return [];
-    }
-}
-
-// Get trending videos (most watched/rated in recent period)
-function getTrendingVideos($pdo, $limit = 10, $days = 30) {
-    try {
-        $stmt = $pdo->prepare("
-            SELECT v.*, 
-                   COUNT(DISTINCT p.user_id) as recent_views,
-                   COALESCE(AVG(r.rating), 0) as avg_rating,
-                   COUNT(r.rating) as rating_count,
-                   GROUP_CONCAT(DISTINCT g.name ORDER BY g.name SEPARATOR ', ') as genres
-            FROM videos v
-            LEFT JOIN user_progress p ON v.id = p.video_id 
-                AND p.last_watched >= DATE_SUB(NOW(), INTERVAL ? DAY)
-            LEFT JOIN ratings r ON v.id = r.video_id
-            LEFT JOIN video_genres vg ON v.id = vg.video_id
-            LEFT JOIN genres g ON vg.genre_id = g.id
-            WHERE v.status = 'active'
-            GROUP BY v.id
-            ORDER BY recent_views DESC, avg_rating DESC, v.view_count DESC
-            LIMIT ?
-        ");
-        $stmt->execute([$days, $limit]);
-        return $stmt->fetchAll();
-    } catch (PDOException $e) {
-        error_log("Error getting trending videos: " . $e->getMessage());
-        return [];
-    }
-}
-
-// =============================================================================
-// USER INTERACTION FUNCTIONS
-// =============================================================================
-
-// Format duration from seconds to readable format
-function formatDuration($seconds) {
-    if ($seconds < 60) {
-        return $seconds . 's';
-    } elseif ($seconds < 3600) {
-        $minutes = floor($seconds / 60);
-        $remainingSeconds = $seconds % 60;
-        return $minutes . 'm' . ($remainingSeconds > 0 ? ' ' . $remainingSeconds . 's' : '');
-    } else {
-        $hours = floor($seconds / 3600);
-        $minutes = floor(($seconds % 3600) / 60);
-        return $hours . 'h' . ($minutes > 0 ? ' ' . $minutes . 'm' : '');
-    }
-}
-
-// Add to watchlist (supports both videos and series)
-function addToWatchlist($pdo, $user_id, $video_id = null, $series_id = null, $priority = 1, $notes = '') {
-    try {
-        if (!$video_id && !$series_id) {
-            return false;
-        }
-        
-        $stmt = $pdo->prepare("
-            INSERT INTO watchlist (user_id, video_id, series_id, priority, notes) 
-            VALUES (?, ?, ?, ?, ?)
-            ON DUPLICATE KEY UPDATE 
-            priority = VALUES(priority), 
-            notes = VALUES(notes),
-            added_at = CURRENT_TIMESTAMP
-        ");
-        return $stmt->execute([$user_id, $video_id, $series_id, $priority, $notes]);
-    } catch (PDOException $e) {
-        error_log("Error adding to watchlist: " . $e->getMessage());
-        return false;
-    }
-}
-
-// Remove from watchlist
-function removeFromWatchlist($pdo, $user_id, $video_id = null, $series_id = null) {
-    try {
-        if (!$video_id && !$series_id) {
-            return false;
-        }
-        
-        $sql = "DELETE FROM watchlist WHERE user_id = ?";
-        $params = [$user_id];
-        
-        if ($video_id) {
-            $sql .= " AND video_id = ?";
-            $params[] = $video_id;
-        } else {
-            $sql .= " AND series_id = ?";
-            $params[] = $series_id;
-        }
-        
-        $stmt = $pdo->prepare($sql);
-        return $stmt->execute($params);
-    } catch (PDOException $e) {
-        error_log("Error removing from watchlist: " . $e->getMessage());
-        return false;
-    }
-}
-
-// Update video progress with enhanced tracking
-function updateVideoProgress($pdo, $user_id, $video_id, $progress_seconds, $total_duration = 0, $completed = false) {
-    try {
-        $stmt = $pdo->prepare("
-            INSERT INTO user_progress (user_id, video_id, progress_seconds, total_duration, completed, last_watched)
-            VALUES (?, ?, ?, ?, ?, NOW())
-            ON DUPLICATE KEY UPDATE
-            progress_seconds = VALUES(progress_seconds),
-            total_duration = VALUES(total_duration),
-            completed = VALUES(completed),
-            last_watched = VALUES(last_watched),
-            watch_count = watch_count + 1
-        ");
-        
-        $result = $stmt->execute([$user_id, $video_id, $progress_seconds, $total_duration, $completed]);
-        
-        if ($result) {
-            // Log user activity
-            logUserActivity($pdo, $user_id, $completed ? 'video_complete' : 'video_play', $video_id, [
-                'progress' => $progress_seconds,
-                'duration' => $total_duration
-            ]);
-        }
-        
-        return $result;
-    } catch (PDOException $e) {
-        error_log("Error updating video progress: " . $e->getMessage());
-        return false;
-    }
-}
-
-// Rate content (video or series)
-function rateContent($pdo, $user_id, $video_id = null, $series_id = null, $rating = null, $review = '') {
-    try {
-        if ((!$video_id && !$series_id) || !$rating) {
-            return false;
-        }
-        
-        $stmt = $pdo->prepare("
-            INSERT INTO ratings (user_id, video_id, series_id, rating, review)
-            VALUES (?, ?, ?, ?, ?)
-            ON DUPLICATE KEY UPDATE
-            rating = VALUES(rating),
-            review = VALUES(review),
-            updated_at = CURRENT_TIMESTAMP
-        ");
-        
-        $result = $stmt->execute([$user_id, $video_id, $series_id, $rating, $review]);
-        
-        if ($result) {
-            // Log user activity
-            $activity_id = $video_id ?: $series_id;
-            logUserActivity($pdo, $user_id, 'rating', $video_id, [
-                'rating' => $rating,
-                'has_review' => !empty($review),
-                'content_type' => $video_id ? 'video' : 'series'
-            ]);
-        }
-        
-        return $result;
-    } catch (PDOException $e) {
-        error_log("Error rating content: " . $e->getMessage());
-        return false;
-    }
-}
-
-// Add legacy function for backward compatibility
-function rateVideo($pdo, $user_id, $video_id, $rating, $review = '') {
-    return rateContent($pdo, $user_id, $video_id, null, $rating, $review);
-}
-
-// Get user statistics
-function getUserStats($pdo, $user_id) {
-    try {
-        $stmt = $pdo->prepare("
-            SELECT 
-                COUNT(DISTINCT p.video_id) as videos_watched,
-                COUNT(DISTINCT CASE WHEN w.video_id IS NOT NULL THEN w.video_id WHEN w.series_id IS NOT NULL THEN w.series_id END) as watchlist_count,
-                COALESCE(AVG(CASE WHEN r.video_id IS NOT NULL THEN r.rating END), 0) as avg_rating_given,
-                COUNT(CASE WHEN r.video_id IS NOT NULL AND r.review IS NOT NULL AND r.review != '' THEN r.rating END) as reviews_written,
-                SUM(p.watch_count) as total_watch_count,
-                SUM(CASE WHEN p.completed = 1 THEN 1 ELSE 0 END) as completed_videos
-            FROM users u
-            LEFT JOIN user_progress p ON u.id = p.user_id
-            LEFT JOIN watchlist w ON u.id = w.user_id
-            LEFT JOIN ratings r ON u.id = r.user_id
-            WHERE u.id = ?
-        ");
-        $stmt->execute([$user_id]);
-        $stats = $stmt->fetch();
-        
-        return $stats ?: [
-            'videos_watched' => 0,
-            'watchlist_count' => 0,
-            'avg_rating_given' => 0,
-            'reviews_written' => 0,
-            'total_watch_count' => 0,
-            'completed_videos' => 0
-        ];
-    } catch (PDOException $e) {
-        error_log("Error getting user stats: " . $e->getMessage());
-        return [
-            'videos_watched' => 0,
-            'watchlist_count' => 0,
-            'avg_rating_given' => 0,
-            'reviews_written' => 0,
-            'total_watch_count' => 0,
-            'completed_videos' => 0
-        ];
-    }
-}
-
-// =============================================================================
-// UTILITY AND HELPER FUNCTIONS
-// =============================================================================
-
-// Generate YouTube embed URL with parameters
-function getYouTubeEmbedUrl($youtube_id, $params = []) {
-    $default_params = [
-        'enablejsapi' => 1,
-        'modestbranding' => 1,
-        'rel' => 0,
-        'showinfo' => 0,
-        'fs' => 1,
-        'cc_load_policy' => 0
-    ];
-    
-    $params = array_merge($default_params, $params);
-    $query_string = http_build_query($params);
-    
-    return "https://www.youtube.com/embed/{$youtube_id}?{$query_string}";
-}
-
-// Generate breadcrumb navigation
+/**
+ * Generate breadcrumb navigation
+ */
 function generateBreadcrumbs($items) {
     if (empty($items)) {
         return '';
@@ -1137,163 +527,376 @@ function generateBreadcrumbs($items) {
     return $breadcrumb;
 }
 
-// Generate secure session token
-function generateSessionToken($length = 64) {
-    return bin2hex(random_bytes($length / 2));
-}
+// =============================================================================
+// SEARCH AND CONTENT FUNCTIONS
+// =============================================================================
 
-// Clean expired sessions
-function cleanExpiredSessions($pdo) {
+/**
+ * Get all available genres
+ */
+function getGenres($pdo) {
     try {
-        $stmt = $pdo->prepare("DELETE FROM user_sessions WHERE expires_at < NOW() OR is_active = FALSE");
-        return $stmt->execute();
+        $stmt = $pdo->prepare("SELECT name FROM genres WHERE is_active = TRUE ORDER BY display_order, name");
+        $stmt->execute();
+        return $stmt->fetchAll(PDO::FETCH_COLUMN);
     } catch (PDOException $e) {
-        error_log("Error cleaning expired sessions: " . $e->getMessage());
-        return false;
+        error_log("Error fetching genres: " . $e->getMessage());
+        return [];
     }
 }
 
-// Format file size
-function formatFileSize($bytes) {
-    $units = ['B', 'KB', 'MB', 'GB', 'TB'];
-    $i = 0;
-    for (; $bytes >= 1024 && $i < count($units) - 1; $i++) {
-        $bytes /= 1024;
+/**
+ * Search videos
+ */
+function searchVideos($pdo, $search = '', $genre = '', $filters = []) {
+    try {
+        $sql = "
+            SELECT v.*,
+                   COALESCE(AVG(r.rating), 0) as avg_rating,
+                   COUNT(r.rating) as rating_count,
+                   GROUP_CONCAT(DISTINCT g.name ORDER BY g.name SEPARATOR ', ') as genres,
+                   MAX(s.title) as series_title,
+                   MAX(se.season_number) as season_number,
+                   CASE
+                       WHEN v.content_type = 'episode' THEN CONCAT(MAX(s.title), ' - S', MAX(se.season_number), 'E', v.episode_number, ': ', v.title)
+                       ELSE v.title
+                   END as display_title
+            FROM videos v
+            LEFT JOIN ratings r ON v.id = r.video_id
+            LEFT JOIN video_genres vg ON v.id = vg.video_id
+            LEFT JOIN genres g ON vg.genre_id = g.id
+            LEFT JOIN series s ON v.series_id = s.id
+            LEFT JOIN seasons se ON v.season_id = se.id
+            WHERE v.status = 'active'
+        ";
+        
+        $params = [];
+        
+        if (!empty($search)) {
+            $sql .= " AND (v.title LIKE ? OR v.description LIKE ? OR v.director LIKE ? OR v.cast LIKE ? OR s.title LIKE ?)";
+            $searchParam = '%' . $search . '%';
+            $params = array_merge($params, [$searchParam, $searchParam, $searchParam, $searchParam, $searchParam]);
+        }
+        
+        if (!empty($genre)) {
+            $sql .= " AND EXISTS (
+                SELECT 1 FROM video_genres vg2 
+                JOIN genres g2 ON vg2.genre_id = g2.id 
+                WHERE vg2.video_id = v.id AND g2.name = ?
+            )";
+            $params[] = $genre;
+        }
+        
+        if (!empty($filters['content_type'])) {
+            $sql .= " AND v.content_type = ?";
+            $params[] = $filters['content_type'];
+        }
+        
+        $sql .= " GROUP BY v.id, v.title, v.content_type, v.series_id, v.season_id, v.episode_number,
+                           v.genre, v.youtube_id, v.description, v.thumbnail_url, v.duration_seconds,
+                           v.release_year, v.imdb_rating, v.language, v.director, v.cast, v.tags,
+                           v.view_count, v.featured, v.status, v.created_at, v.updated_at
+                  ORDER BY v.content_type ASC, MAX(s.title) ASC, MAX(se.season_number) ASC, v.episode_number ASC, v.created_at DESC";
+        
+        if (!empty($filters['limit'])) {
+            $sql .= " LIMIT ?";
+            $params[] = $filters['limit'];
+        }
+        
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute($params);
+        return $stmt->fetchAll();
+        
+    } catch (PDOException $e) {
+        error_log("Error searching videos: " . $e->getMessage());
+        return [];
     }
-    return round($bytes, 2) . ' ' . $units[$i];
+}
+
+/**
+ * Search series
+ */
+function searchSeries($pdo, $search = '', $genre = '', $filters = []) {
+    try {
+        $sql = "
+            SELECT s.*,
+                   COALESCE(AVG(r.rating), 0) as avg_rating,
+                   COUNT(r.rating) as rating_count,
+                   GROUP_CONCAT(DISTINCT g.name ORDER BY g.name SEPARATOR ', ') as genres,
+                   COUNT(DISTINCT se.id) as season_count,
+                   COUNT(DISTINCT v.id) as episode_count
+            FROM series s
+            LEFT JOIN ratings r ON s.id = r.series_id
+            LEFT JOIN series_genres sg ON s.id = sg.series_id
+            LEFT JOIN genres g ON sg.genre_id = g.id
+            LEFT JOIN seasons se ON s.id = se.series_id
+            LEFT JOIN videos v ON s.id = v.series_id AND v.content_type = 'episode'
+            WHERE s.status = 'active'
+        ";
+        
+        $params = [];
+        
+        if (!empty($search)) {
+            $sql .= " AND (s.title LIKE ? OR s.description LIKE ? OR s.director LIKE ? OR s.cast LIKE ?)";
+            $searchParam = '%' . $search . '%';
+            $params = array_merge($params, [$searchParam, $searchParam, $searchParam, $searchParam]);
+        }
+        
+        if (!empty($genre)) {
+            $sql .= " AND EXISTS (
+                SELECT 1 FROM series_genres sg2 
+                JOIN genres g2 ON sg2.genre_id = g2.id 
+                WHERE sg2.series_id = s.id AND g2.name = ?
+            )";
+            $params[] = $genre;
+        }
+        
+        $sql .= " GROUP BY s.id, s.title, s.description, s.thumbnail_url, s.release_year, s.imdb_rating,
+                           s.language, s.director, s.cast, s.tags, s.view_count, s.featured,
+                           s.status, s.created_at, s.updated_at
+                  ORDER BY s.featured DESC, s.created_at DESC";
+        
+        if (!empty($filters['limit'])) {
+            $sql .= " LIMIT ?";
+            $params[] = $filters['limit'];
+        }
+        
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute($params);
+        return $stmt->fetchAll();
+        
+    } catch (PDOException $e) {
+        error_log("Error searching series: " . $e->getMessage());
+        return [];
+    }
+}
+
+/**
+ * Get featured content
+ */
+function getFeaturedContent($pdo, $limit = 6) {
+    try {
+        $content = [];
+        
+        // Get featured movies
+        $stmt = $pdo->prepare("
+            SELECT v.*, 'movie' as item_type,
+                   COALESCE(AVG(r.rating), 0) as avg_rating,
+                   COUNT(r.rating) as rating_count,
+                   GROUP_CONCAT(DISTINCT g.name ORDER BY g.name SEPARATOR ', ') as genres
+            FROM videos v
+            LEFT JOIN ratings r ON v.id = r.video_id
+            LEFT JOIN video_genres vg ON v.id = vg.video_id
+            LEFT JOIN genres g ON vg.genre_id = g.id
+            WHERE v.status = 'active' AND v.featured = TRUE AND v.content_type = 'movie'
+            GROUP BY v.id, v.title, v.content_type, v.series_id, v.season_id, v.episode_number,
+                     v.genre, v.youtube_id, v.description, v.thumbnail_url, v.duration_seconds,
+                     v.release_year, v.imdb_rating, v.language, v.director, v.cast, v.tags,
+                     v.view_count, v.featured, v.status, v.created_at, v.updated_at
+            ORDER BY v.created_at DESC
+            LIMIT ?
+        ");
+        $stmt->execute([max(1, $limit / 2)]);
+        $content = array_merge($content, $stmt->fetchAll());
+        
+        // Get featured series
+        $stmt = $pdo->prepare("
+            SELECT s.*, 'series' as item_type,
+                   COALESCE(AVG(r.rating), 0) as avg_rating,
+                   COUNT(r.rating) as rating_count,
+                   GROUP_CONCAT(DISTINCT g.name ORDER BY g.name SEPARATOR ', ') as genres,
+                   COUNT(DISTINCT se.id) as season_count,
+                   COUNT(DISTINCT v.id) as episode_count
+            FROM series s
+            LEFT JOIN ratings r ON s.id = r.series_id
+            LEFT JOIN series_genres sg ON s.id = sg.series_id
+            LEFT JOIN genres g ON sg.genre_id = g.id
+            LEFT JOIN seasons se ON s.id = se.series_id
+            LEFT JOIN videos v ON s.id = v.series_id AND v.content_type = 'episode'
+            WHERE s.status = 'active' AND s.featured = TRUE
+            GROUP BY s.id, s.title, s.description, s.thumbnail_url, s.release_year, s.imdb_rating,
+                     s.language, s.director, s.cast, s.tags, s.view_count, s.featured,
+                     s.status, s.created_at, s.updated_at
+            ORDER BY s.created_at DESC
+            LIMIT ?
+        ");
+        $stmt->execute([max(1, $limit / 2)]);
+        $content = array_merge($content, $stmt->fetchAll());
+        
+        // Sort by created_at and limit total results
+        usort($content, function($a, $b) {
+            return strtotime($b['created_at']) - strtotime($a['created_at']);
+        });
+        
+        return array_slice($content, 0, $limit);
+    } catch (PDOException $e) {
+        error_log("Error getting featured content: " . $e->getMessage());
+        return [];
+    }
 }
 
 // =============================================================================
-// SYSTEM MANAGEMENT FUNCTIONS
+// USER INTERACTION FUNCTIONS
 // =============================================================================
 
-// Get system settings
-function getSystemSetting($pdo, $key, $default = null) {
+/**
+ * Add to watchlist
+ */
+function addToWatchlist($pdo, $user_id, $video_id = null, $series_id = null, $priority = 1, $notes = '') {
     try {
-        $stmt = $pdo->prepare("SELECT setting_value, setting_type FROM settings WHERE setting_key = ?");
-        $stmt->execute([$key]);
-        $result = $stmt->fetch();
-        
-        if (!$result) {
-            return $default;
-        }
-        
-        $value = $result['setting_value'];
-        
-        // Convert based on type
-        switch ($result['setting_type']) {
-            case 'integer':
-                return (int)$value;
-            case 'boolean':
-                return (bool)$value;
-            case 'json':
-                return json_decode($value, true);
-            default:
-                return $value;
-        }
-    } catch (PDOException $e) {
-        error_log("Error getting system setting: " . $e->getMessage());
-        return $default;
-    }
-}
-
-// Update system setting
-function updateSystemSetting($pdo, $key, $value, $type = 'string') {
-    try {
-        // Convert value based on type
-        switch ($type) {
-            case 'json':
-                $value = json_encode($value);
-                break;
-            case 'boolean':
-                $value = $value ? '1' : '0';
-                break;
-            default:
-                $value = (string)$value;
+        if (!$video_id && !$series_id) {
+            return false;
         }
         
         $stmt = $pdo->prepare("
-            UPDATE settings 
-            SET setting_value = ?, setting_type = ?, updated_at = CURRENT_TIMESTAMP 
-            WHERE setting_key = ?
+            INSERT INTO watchlist (user_id, video_id, series_id, priority, notes) 
+            VALUES (?, ?, ?, ?, ?)
+            ON DUPLICATE KEY UPDATE 
+            priority = VALUES(priority), 
+            notes = VALUES(notes),
+            added_at = CURRENT_TIMESTAMP
         ");
-        return $stmt->execute([$value, $type, $key]);
+        return $stmt->execute([$user_id, $video_id, $series_id, $priority, $notes]);
     } catch (PDOException $e) {
-        error_log("Error updating system setting: " . $e->getMessage());
+        error_log("Error adding to watchlist: " . $e->getMessage());
         return false;
     }
 }
 
-// Check if maintenance mode is enabled
-function isMaintenanceMode($pdo) {
-    return (bool)getSystemSetting($pdo, 'maintenance_mode', false);
+/**
+ * Remove from watchlist
+ */
+function removeFromWatchlist($pdo, $user_id, $video_id = null, $series_id = null) {
+    try {
+        if (!$video_id && !$series_id) {
+            return false;
+        }
+        
+        $sql = "DELETE FROM watchlist WHERE user_id = ?";
+        $params = [$user_id];
+        
+        if ($video_id) {
+            $sql .= " AND video_id = ?";
+            $params[] = $video_id;
+        } else {
+            $sql .= " AND series_id = ?";
+            $params[] = $series_id;
+        }
+        
+        $stmt = $pdo->prepare($sql);
+        return $stmt->execute($params);
+    } catch (PDOException $e) {
+        error_log("Error removing from watchlist: " . $e->getMessage());
+        return false;
+    }
 }
 
-// Validate and process SRT file upload
-function processSubtitleUpload($file, $video_id, $language = 'en', $language_name = 'English') {
-    $upload_errors = [];
-    
-    // Check file upload errors
-    if ($file['error'] !== UPLOAD_ERR_OK) {
-        $upload_errors[] = "File upload failed with error code: " . $file['error'];
-        return ['success' => false, 'errors' => $upload_errors];
+/**
+ * Update video progress
+ */
+function updateVideoProgress($pdo, $user_id, $video_id, $progress_seconds, $total_duration = 0, $completed = false) {
+    try {
+        $stmt = $pdo->prepare("
+            INSERT INTO user_progress (user_id, video_id, progress_seconds, total_duration, completed, last_watched)
+            VALUES (?, ?, ?, ?, ?, NOW())
+            ON DUPLICATE KEY UPDATE
+            progress_seconds = VALUES(progress_seconds),
+            total_duration = VALUES(total_duration),
+            completed = VALUES(completed),
+            last_watched = VALUES(last_watched),
+            watch_count = watch_count + 1
+        ");
+        
+        $result = $stmt->execute([$user_id, $video_id, $progress_seconds, $total_duration, $completed]);
+        
+        if ($result) {
+            // Log user activity
+            logUserActivity($pdo, $user_id, $completed ? 'video_complete' : 'video_play', $video_id, [
+                'progress' => $progress_seconds,
+                'duration' => $total_duration
+            ]);
+        }
+        
+        return $result;
+    } catch (PDOException $e) {
+        error_log("Error updating video progress: " . $e->getMessage());
+        return false;
     }
-    
-    // Check file extension
-    $file_extension = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
-    if ($file_extension !== 'srt') {
-        $upload_errors[] = "Only .srt files are allowed";
-        return ['success' => false, 'errors' => $upload_errors];
+}
+
+/**
+ * Rate content (video or series)
+ */
+function rateContent($pdo, $user_id, $video_id = null, $series_id = null, $rating = null, $review = '') {
+    try {
+        if ((!$video_id && !$series_id) || !$rating) {
+            return false;
+        }
+        
+        $stmt = $pdo->prepare("
+            INSERT INTO ratings (user_id, video_id, series_id, rating, review)
+            VALUES (?, ?, ?, ?, ?)
+            ON DUPLICATE KEY UPDATE
+            rating = VALUES(rating),
+            review = VALUES(review),
+            updated_at = CURRENT_TIMESTAMP
+        ");
+        
+        $result = $stmt->execute([$user_id, $video_id, $series_id, $rating, $review]);
+        
+        if ($result) {
+            // Log user activity
+            $activity_id = $video_id ?: $series_id;
+            logUserActivity($pdo, $user_id, 'rating', $video_id, [
+                'rating' => $rating,
+                'has_review' => !empty($review),
+                'content_type' => $video_id ? 'video' : 'series'
+            ]);
+        }
+        
+        return $result;
+    } catch (PDOException $e) {
+        error_log("Error rating content: " . $e->getMessage());
+        return false;
     }
-    
-    // Check file size (max 5MB)
-    $max_size = 5 * 1024 * 1024; // 5MB
-    if ($file['size'] > $max_size) {
-        $upload_errors[] = "File is too large. Maximum size is 5MB";
-        return ['success' => false, 'errors' => $upload_errors];
-    }
-    
-    // Validate SRT content
-    $srt_content = file_get_contents($file['tmp_name']);
-    if (empty($srt_content)) {
-        $upload_errors[] = "SRT file is empty or unreadable";
-        return ['success' => false, 'errors' => $upload_errors];
-    }
-    
-    $subtitles = parseSrtContent($srt_content);
-    if (empty($subtitles)) {
-        $upload_errors[] = "Invalid SRT format or no valid subtitles found";
-        return ['success' => false, 'errors' => $upload_errors];
-    }
-    
-    // Create filename
-    $filename = $video_id . '_' . $language . '.srt';
-    $upload_path = SUBTITLES_DIR . $filename;
-    
-    // Ensure directory exists
-    if (!file_exists(SUBTITLES_DIR)) {
-        mkdir(SUBTITLES_DIR, 0755, true);
-    }
-    
-    // Move uploaded file
-    if (!move_uploaded_file($file['tmp_name'], $upload_path)) {
-        $upload_errors[] = "Failed to save subtitle file";
-        return ['success' => false, 'errors' => $upload_errors];
-    }
-    
-    return [
-        'success' => true,
-        'file_path' => $upload_path,
-        'subtitle_count' => count($subtitles),
-        'file_size' => filesize($upload_path)
-    ];
+}
+
+/**
+ * Rate video (legacy function for backward compatibility)
+ */
+function rateVideo($pdo, $user_id, $video_id, $rating, $review = '') {
+    return rateContent($pdo, $user_id, $video_id, null, $rating, $review);
 }
 
 // =============================================================================
-// LOGGING AND ANALYTICS FUNCTIONS
+// LOGGING FUNCTIONS
 // =============================================================================
 
-// Log admin action with enhanced details
+/**
+ * Log user activity
+ */
+function logUserActivity($pdo, $user_id, $activity_type, $video_id = null, $details = null) {
+    try {
+        $stmt = $pdo->prepare("
+            INSERT INTO user_activity_logs (user_id, activity_type, video_id, details, ip_address)
+            VALUES (?, ?, ?, ?, ?)
+        ");
+        return $stmt->execute([
+            $user_id,
+            $activity_type,
+            $video_id,
+            $details ? json_encode($details) : null,
+            $_SERVER['REMOTE_ADDR'] ?? 'unknown'
+        ]);
+    } catch (PDOException $e) {
+        error_log("Error logging user activity: " . $e->getMessage());
+        return false;
+    }
+}
+
+/**
+ * Log admin action
+ */
 function logAdminAction($pdo, $admin_id, $action, $target_type = null, $target_id = null, $details = '') {
     try {
         $stmt = $pdo->prepare("
@@ -1311,26 +914,6 @@ function logAdminAction($pdo, $admin_id, $action, $target_type = null, $target_i
         ]);
     } catch (PDOException $e) {
         error_log("Error logging admin action: " . $e->getMessage());
-        return false;
-    }
-}
-
-// Log user activity
-function logUserActivity($pdo, $user_id, $activity_type, $video_id = null, $details = null) {
-    try {
-        $stmt = $pdo->prepare("
-            INSERT INTO user_activity_logs (user_id, activity_type, video_id, details, ip_address)
-            VALUES (?, ?, ?, ?, ?)
-        ");
-        return $stmt->execute([
-            $user_id,
-            $activity_type,
-            $video_id,
-            $details ? json_encode($details) : null,
-            $_SERVER['REMOTE_ADDR'] ?? 'unknown'
-        ]);
-    } catch (PDOException $e) {
-        error_log("Error logging user activity: " . $e->getMessage());
         return false;
     }
 }
