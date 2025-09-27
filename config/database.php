@@ -2,6 +2,11 @@
 // config/database.php - Fixed Database configuration v0.2.0
 session_start();
 
+// Enable debug mode (set to true for development, false for production)
+if (!defined('DEBUG_MODE')) {
+    define('DEBUG_MODE', false); // Change to false in production
+}
+
 // Database configuration - UPDATE THESE VALUES
 $host = 'localhost';
 $dbname = 'movie_streaming';
