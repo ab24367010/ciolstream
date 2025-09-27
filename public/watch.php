@@ -1,4 +1,5 @@
 <?php
+// Start session first
 session_start();
 
 // public/watch.php - Enhanced Video player page v0.2.0 with Series Support - FIXED ACCESS
@@ -14,27 +15,37 @@ if (!$video_id) {
     exit;
 }
 
-// FIXED: Check if user is logged in and get status
-$user_id = isset($_SESSION['user_id']) ? $_SESSION['user_id'] : null;
+// FIXED: Simple and direct session check
+$user_id = isset($_SESSION['user_id']) ? (int)$_SESSION['user_id'] : null;
 $user_status = null;
 $username = null;
 $expiry_date = null;
 
 if ($user_id) {
-    // Validate session and get user data
-    if (isValidUserSession($pdo, $user_id)) {
+    try {
         $stmt = $pdo->prepare("SELECT username, status, expiry_date FROM users WHERE id = ?");
         $stmt->execute([$user_id]);
         $user = $stmt->fetch();
+        
         if ($user) {
             $user_status = $user['status'];
             $username = $user['username'];
             $expiry_date = $user['expiry_date'];
+            
+            // Auto-expire if needed but keep session
+            if ($user['status'] === 'active' && $user['expiry_date'] && date('Y-m-d') > $user['expiry_date']) {
+                $stmt = $pdo->prepare("UPDATE users SET status = 'inactive' WHERE id = ?");
+                $stmt->execute([$user_id]);
+                $user_status = 'inactive';
+            }
+        } else {
+            // User doesn't exist, clear session
+            unset($_SESSION['user_id']);
+            $user_id = null;
         }
-    } else {
-        // Invalid session, clear it
-        unset($_SESSION['user_id']);
-        $user_id = null;
+    } catch (PDOException $e) {
+        error_log("Database error in watch.php: " . $e->getMessage());
+        // Don't clear session on database errors
     }
 }
 

@@ -1,0 +1,19 @@
+1
+00:00:00,000 --> 00:00:04,000
+Welcome to MovieStream v0.2.0
+
+2
+00:00:04,000 --> 00:00:08,000
+This is a sample subtitle file
+
+3
+00:00:08,000 --> 00:00:12,000
+Subtitles are now loaded from .srt files
+
+4
+00:00:12,000 --> 00:00:16,000
+And they work in both normal and fullscreen mode
+
+5
+00:00:16,000 --> 00:00:20,000
+Only active users can see these subtitles
