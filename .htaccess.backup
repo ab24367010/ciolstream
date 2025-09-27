@@ -1,7 +1,7 @@
-# .htaccess - Moviestream v0.3.0 (Apache 2.4+ compatible)
+# .htaccess - v0.2.0 with Environment Switch
 RewriteEngine On
 
-# Redirect to HTTPS if not already
+# Redirect to HTTPS if available
 RewriteCond %{HTTPS} off
 RewriteCond %{HTTP:X-Forwarded-Proto} !https
 RewriteRule ^(.*)$ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
@@ -28,23 +28,32 @@ RewriteRule ^(.*)$ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
 </IfModule>
 
 # Prevent access to sensitive files
-<FilesMatch "\.(sql|srt)$">
-    Require all denied
-</FilesMatch>
+<Files "*.sql">
+    Order Allow,Deny
+    Deny from all
+</Files>
 
-<FilesMatch "^config/.*\.php$">
-    Require all denied
-</FilesMatch>
+<Files "*.srt">
+    Order Allow,Deny
+    Deny from all
+</Files>
+
+<Files "config/*.php">
+    Order Allow,Deny
+    Deny from all
+</Files>
 
 # Allow access to config/database.php for includes
 <Files "config/database.php">
-    Require all granted
+    Order Deny,Allow
+    Allow from all
 </Files>
 
-# Protect uploads directory
+# Protect upload directory
 <Directory "uploads">
     Options -Indexes
-    <FilesMatch "\.php$">
-        Require all denied
-    </FilesMatch>
+    <Files "*.php">
+        Order Allow,Deny
+        Deny from all
+    </Files>
 </Directory>

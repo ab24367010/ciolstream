@@ -1,4 +1,5 @@
 <?php
+session_start();
 // public/index.php - Enhanced Main page v0.2.0 with Series Support
 require_once '../config/database.php';
 require_once '../includes/functions.php';

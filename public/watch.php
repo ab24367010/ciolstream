@@ -21,39 +21,31 @@ $username = null;
 $expiry_date = null;
 
 if ($user_id) {
-    if (isValidUserSession($pdo, $user_id)) {
-        $stmt = $pdo->prepare("SELECT username, status, expiry_date FROM users WHERE id = ?");
-        $stmt->execute([$user_id]);
-        $user = $stmt->fetch();
-        if ($user) {
-            $user_status = $user['status'];
-            $username = $user['username'];
-            $expiry_date = $user['expiry_date'];
-        }
+    // Always fetch user data regardless of session validity
+    $stmt = $pdo->prepare("SELECT username, status, expiry_date FROM users WHERE id = ?");
+    $stmt->execute([$user_id]);
+    $user = $stmt->fetch();
+    if ($user) {
+        $user_status = $user['status'];
+        $username = $user['username'];
+        $expiry_date = $user['expiry_date'];
     } else {
-        // Only clear session if validation truly failed (user doesn't exist)
-        // Don't clear session for expired users - they just become inactive
-        $stmt = $pdo->prepare("SELECT id FROM users WHERE id = ?");
-        $stmt->execute([$user_id]);
-        if (!$stmt->fetch()) {
-            // User doesn't exist, clear session
-            unset($_SESSION['user_id']);
-            $user_id = null;
-        }
+        // User doesn't exist, clear session
+        unset($_SESSION['user_id']);
+        $user_id = null;
+        $user_status = null;
+        $username = null;
+        $expiry_date = null;
     }
 }
 
 // Get video details with user data (including series info)
 $video = getVideoWithUserData($pdo, $video_id, $user_id);
-
+ 
 if (!$video) {
     header('Location: index.php');
     exit;
 }
-
-// FIXED: Everyone can access the video content
-// Only check subtitle access separately
-$can_watch_video = true; // Everyone can watch
 
 // FIXED: Get subtitles ONLY if user has subtitle access (active users only)
 $subtitles_data = [];
@@ -261,8 +253,8 @@ if ($is_episode && $video['series_id']) {
                     <div class="video-meta">
                         <span class="genre-tags">
                             <?php 
-                            $genres = explode(', ', $video['genres']);
-                            $colors = explode(',', $video['genre_colors'] ?? '');
+                            $genres = isset($video['genres']) ? explode(', ', $video['genres']) : [];
+                            $colors = isset($video['genre_colors']) ? explode(',', $video['genre_colors']) : [];
                             foreach ($genres as $index => $genre):
                                 $color = isset($colors[$index]) ? $colors[$index] : '#667eea';
                             ?>
@@ -381,16 +373,20 @@ if ($is_episode && $video['series_id']) {
                     </div>
 
                     <!-- Series Episodes Navigation -->
-                    <?php if ($is_episode && !empty($video['season_episodes'])): ?>
+                    <?php 
+                    $season_episodes = isset($video['season_episodes']) && is_array($video['season_episodes']) ? $video['season_episodes'] : [];
+                    $all_seasons = isset($video['all_seasons']) && is_array($video['all_seasons']) ? $video['all_seasons'] : [];
+                    ?>
+                    <?php if ($is_episode && !empty($season_episodes)): ?>
                     <div class="series-navigation">
                         <h3>Season <?php echo $current_season['season_number']; ?> Episodes</h3>
                         <div class="episodes-grid">
-                            <?php foreach ($video['season_episodes'] as $episode): ?>
+                            <?php foreach ($season_episodes as $episode): ?>
                                 <div class="episode-item <?php echo $episode['id'] == $video_id ? 'current' : ''; ?>" 
                                      onclick="<?php echo $episode['id'] != $video_id ? "window.location.href='watch.php?id=" . $episode['id'] . "'" : ''; ?>">
                                     <div class="episode-header">
                                         <span class="episode-number">Episode <?php echo $episode['episode_number']; ?></span>
-                                        <?php if ($episode['completed']): ?>
+                                        <?php if (!empty($episode['completed'])): ?>
                                             <span class="completed-badge">✓</span>
                                         <?php endif; ?>
                                         <?php if ($episode['id'] == $video_id): ?>
@@ -399,7 +395,7 @@ if ($is_episode && $video['series_id']) {
                                     </div>
                                     <div class="episode-title"><?php echo htmlspecialchars($episode['title']); ?></div>
                                     <div class="episode-meta">
-                                        <?php if ($episode['duration_seconds']): ?>
+                                        <?php if (!empty($episode['duration_seconds'])): ?>
                                             <span>⏱️ <?php echo formatDuration($episode['duration_seconds']); ?></span>
                                         <?php endif; ?>
                                     </div>
@@ -408,11 +404,11 @@ if ($is_episode && $video['series_id']) {
                         </div>
                         
                         <!-- Other Seasons -->
-                        <?php if (!empty($video['all_seasons']) && count($video['all_seasons']) > 1): ?>
+                        <?php if (!empty($all_seasons) && count($all_seasons) > 1): ?>
                         <div class="other-seasons">
                             <h4>Other Seasons</h4>
                             <div class="seasons-list">
-                                <?php foreach ($video['all_seasons'] as $season): ?>
+                                <?php foreach ($all_seasons as $season): ?>
                                     <?php if ($season['id'] != $video['season_id']): ?>
                                         <a href="series.php?id=<?php echo $video['series_id']; ?>&season=<?php echo $season['season_number']; ?>" 
                                            class="season-btn">
