@@ -1,3 +1,3 @@
 .claude
-composer.lock
-composer.json
+vendor/
+# composer.lock only if you really don't want to share exact versions
