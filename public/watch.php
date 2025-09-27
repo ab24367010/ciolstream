@@ -21,27 +21,26 @@ $username = null;
 $expiry_date = null;
 
 if ($user_id) {
-    // Always fetch user data regardless of session validity
-    $stmt = $pdo->prepare("SELECT username, status, expiry_date FROM users WHERE id = ?");
-    $stmt->execute([$user_id]);
-    $user = $stmt->fetch();
-    if ($user) {
-        $user_status = $user['status'];
-        $username = $user['username'];
-        $expiry_date = $user['expiry_date'];
+    // Validate session and get user data
+    if (isValidUserSession($pdo, $user_id)) {
+        $stmt = $pdo->prepare("SELECT username, status, expiry_date FROM users WHERE id = ?");
+        $stmt->execute([$user_id]);
+        $user = $stmt->fetch();
+        if ($user) {
+            $user_status = $user['status'];
+            $username = $user['username'];
+            $expiry_date = $user['expiry_date'];
+        }
     } else {
-        // User doesn't exist, clear session
+        // Invalid session, clear it
         unset($_SESSION['user_id']);
         $user_id = null;
-        $user_status = null;
-        $username = null;
-        $expiry_date = null;
     }
 }
 
 // Get video details with user data (including series info)
 $video = getVideoWithUserData($pdo, $video_id, $user_id);
- 
+
 if (!$video) {
     header('Location: index.php');
     exit;
@@ -51,11 +50,15 @@ if (!$video) {
 $subtitles_data = [];
 $available_subtitles = [];
 
-if ($user_id && userHasSubtitleAccess($user_status)) {
+// FIXED: Get subtitles ONLY if user has subtitle access (active users only)
+$subtitles_data = [];
+$available_subtitles = [];
+
+if ($user_id && $user_status === 'active') {
     $stmt = $pdo->prepare("SELECT * FROM subtitles WHERE video_id = ? ORDER BY language");
     $stmt->execute([$video_id]);
     $available_subtitles = $stmt->fetchAll();
-    
+
     // Load default subtitle (English if available, otherwise first available)
     $default_subtitle = null;
     foreach ($available_subtitles as $subtitle) {
@@ -64,11 +67,11 @@ if ($user_id && userHasSubtitleAccess($user_status)) {
             break;
         }
     }
-    
+
     if (!$default_subtitle && !empty($available_subtitles)) {
         $default_subtitle = $available_subtitles[0];
     }
-    
+
     if ($default_subtitle && file_exists($default_subtitle['srt_file_path'])) {
         $srt_content = file_get_contents($default_subtitle['srt_file_path']);
         $subtitles_data = parseSrtContent($srt_content);
@@ -102,12 +105,12 @@ if ($is_episode && $video['series_id']) {
     $stmt = $pdo->prepare("SELECT * FROM series WHERE id = ?");
     $stmt->execute([$video['series_id']]);
     $series_info = $stmt->fetch();
-    
+
     // Get current season info
     $stmt = $pdo->prepare("SELECT * FROM seasons WHERE id = ?");
     $stmt->execute([$video['season_id']]);
     $current_season = $stmt->fetch();
-    
+
     // Get next episode
     $stmt = $pdo->prepare("
         SELECT * FROM videos 
@@ -117,7 +120,7 @@ if ($is_episode && $video['series_id']) {
     ");
     $stmt->execute([$video['season_id'], $video['episode_number']]);
     $next_episode = $stmt->fetch();
-    
+
     // If no next episode in current season, try next season
     if (!$next_episode && $series_info) {
         $stmt = $pdo->prepare("
@@ -130,7 +133,7 @@ if ($is_episode && $video['series_id']) {
         $stmt->execute([$series_info['id'], $current_season['season_number']]);
         $next_episode = $stmt->fetch();
     }
-    
+
     // Get previous episode
     $stmt = $pdo->prepare("
         SELECT * FROM videos 
@@ -140,7 +143,7 @@ if ($is_episode && $video['series_id']) {
     ");
     $stmt->execute([$video['season_id'], $video['episode_number']]);
     $prev_episode = $stmt->fetch();
-    
+
     // If no previous episode in current season, try previous season
     if (!$prev_episode && $series_info) {
         $stmt = $pdo->prepare("
@@ -158,6 +161,7 @@ if ($is_episode && $video['series_id']) {
 
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -168,6 +172,7 @@ if ($is_episode && $video['series_id']) {
     <meta property="og:description" content="<?php echo htmlspecialchars(substr($video['description'], 0, 160)); ?>">
     <meta property="og:image" content="<?php echo $video['thumbnail_url']; ?>">
 </head>
+
 <body>
     <header>
         <nav class="navbar">
@@ -197,11 +202,11 @@ if ($is_episode && $video['series_id']) {
 
     <main>
         <div class="container">
-            <?php 
+            <?php
             $breadcrumbs = [
                 ['title' => 'Home', 'url' => 'index.php']
             ];
-            
+
             if ($is_episode) {
                 $breadcrumbs[] = ['title' => 'TV Series', 'url' => 'index.php?type=series'];
                 $breadcrumbs[] = ['title' => $series_info['title'], 'url' => 'series.php?id=' . $series_info['id']];
@@ -211,7 +216,7 @@ if ($is_episode && $video['series_id']) {
                 $breadcrumbs[] = ['title' => 'Movies', 'url' => 'index.php?type=movie'];
                 $breadcrumbs[] = ['title' => $video['title']];
             }
-            
+
             echo generateBreadcrumbs($breadcrumbs);
             ?>
 
@@ -219,40 +224,40 @@ if ($is_episode && $video['series_id']) {
                 <div class="video-header">
                     <h1>
                         <?php if ($is_episode): ?>
-                            📺 <?php echo htmlspecialchars($series_info['title']); ?> - 
-                            S<?php echo $current_season['season_number']; ?>E<?php echo $video['episode_number']; ?>: 
+                            📺 <?php echo htmlspecialchars($series_info['title']); ?> -
+                            S<?php echo $current_season['season_number']; ?>E<?php echo $video['episode_number']; ?>:
                             <?php echo htmlspecialchars($video['title']); ?>
                         <?php else: ?>
                             🎬 <?php echo htmlspecialchars($video['title']); ?>
                         <?php endif; ?>
                     </h1>
-                    
+
                     <!-- Episode Navigation for Series -->
                     <?php if ($is_episode): ?>
-                    <div class="episode-navigation">
-                        <div class="episode-nav-buttons">
-                            <?php if ($prev_episode): ?>
-                                <a href="watch.php?id=<?php echo $prev_episode['id']; ?>" class="btn btn-secondary">
-                                    ⬅️ Previous Episode
+                        <div class="episode-navigation">
+                            <div class="episode-nav-buttons">
+                                <?php if ($prev_episode): ?>
+                                    <a href="watch.php?id=<?php echo $prev_episode['id']; ?>" class="btn btn-secondary">
+                                        ⬅️ Previous Episode
+                                    </a>
+                                <?php endif; ?>
+
+                                <a href="series.php?id=<?php echo $series_info['id']; ?>&season=<?php echo $current_season['season_number']; ?>" class="btn">
+                                    📺 View All Episodes
                                 </a>
-                            <?php endif; ?>
-                            
-                            <a href="series.php?id=<?php echo $series_info['id']; ?>&season=<?php echo $current_season['season_number']; ?>" class="btn">
-                                📺 View All Episodes
-                            </a>
-                            
-                            <?php if ($next_episode): ?>
-                                <a href="watch.php?id=<?php echo $next_episode['id']; ?>" class="btn btn-secondary">
-                                    Next Episode ➡️
-                                </a>
-                            <?php endif; ?>
+
+                                <?php if ($next_episode): ?>
+                                    <a href="watch.php?id=<?php echo $next_episode['id']; ?>" class="btn btn-secondary">
+                                        Next Episode ➡️
+                                    </a>
+                                <?php endif; ?>
+                            </div>
                         </div>
-                    </div>
                     <?php endif; ?>
-                    
+
                     <div class="video-meta">
                         <span class="genre-tags">
-                            <?php 
+                            <?php
                             $genres = isset($video['genres']) ? explode(', ', $video['genres']) : [];
                             $colors = isset($video['genre_colors']) ? explode(',', $video['genre_colors']) : [];
                             foreach ($genres as $index => $genre):
@@ -263,49 +268,49 @@ if ($is_episode && $video['series_id']) {
                                 </span>
                             <?php endforeach; ?>
                         </span>
-                        
+
                         <div class="video-info-row">
                             <?php if ($video['release_year']): ?>
                                 <span class="info-item">📅 <?php echo $video['release_year']; ?></span>
                             <?php endif; ?>
-                            
+
                             <?php if ($video['duration_seconds']): ?>
                                 <span class="info-item">⏱️ <?php echo formatDuration($video['duration_seconds']); ?></span>
                             <?php endif; ?>
-                            
+
                             <span class="info-item">👀 <?php echo number_format($video['view_count']); ?> views</span>
-                            
+
                             <?php if ($video['avg_rating'] > 0): ?>
                                 <span class="info-item">⭐ <?php echo number_format($video['avg_rating'], 1); ?>/5 (<?php echo $video['rating_count']; ?> ratings)</span>
                             <?php endif; ?>
-                            
+
                             <!-- FIXED: Only show subtitle indicator for users who can actually see subtitles -->
-                            <?php if ($user_id && userHasSubtitleAccess($user_status) && !empty($available_subtitles)): ?>
+                            <?php if ($user_id && $user_status === 'active' && !empty($available_subtitles)): ?>
                                 <span class="info-item subtitle-indicator">🔤 Subtitles Available</span>
                             <?php endif; ?>
                         </div>
-                        
+
                         <?php if ($user_id): ?>
-                        <div class="user-actions">
-                            <button id="watchlist-btn" 
+                            <div class="user-actions">
+                                <button id="watchlist-btn"
                                     class="action-btn <?php echo $video['in_watchlist'] ? 'active' : ''; ?>"
                                     data-video-id="<?php echo $video_id; ?>">
-                                <?php echo $video['in_watchlist'] ? '❤️ In Watchlist' : '🤍 Add to Watchlist'; ?>
-                            </button>
-                            
-                            <div class="rating-container">
-                                <span class="rating-label">Rate this <?php echo $is_episode ? 'episode' : 'video'; ?>:</span>
-                                <div class="star-rating" data-video-id="<?php echo $video_id; ?>">
-                                    <?php for ($i = 1; $i <= 5; $i++): ?>
-                                        <span class="star <?php echo ($video['user_rating'] && $i <= $video['user_rating']) ? 'active' : ''; ?>" 
-                                              data-rating="<?php echo $i; ?>">★</span>
-                                    <?php endfor; ?>
+                                    <?php echo $video['in_watchlist'] ? '❤️ In Watchlist' : '🤍 Add to Watchlist'; ?>
+                                </button>
+
+                                <div class="rating-container">
+                                    <span class="rating-label">Rate this <?php echo $is_episode ? 'episode' : 'video'; ?>:</span>
+                                    <div class="star-rating" data-video-id="<?php echo $video_id; ?>">
+                                        <?php for ($i = 1; $i <= 5; $i++): ?>
+                                            <span class="star <?php echo ($video['user_rating'] && $i <= $video['user_rating']) ? 'active' : ''; ?>"
+                                                data-rating="<?php echo $i; ?>">★</span>
+                                        <?php endfor; ?>
+                                    </div>
+                                    <?php if ($video['user_rating']): ?>
+                                        <span class="user-rating-text">Your rating: <?php echo $video['user_rating']; ?>/5</span>
+                                    <?php endif; ?>
                                 </div>
-                                <?php if ($video['user_rating']): ?>
-                                    <span class="user-rating-text">Your rating: <?php echo $video['user_rating']; ?>/5</span>
-                                <?php endif; ?>
                             </div>
-                        </div>
                         <?php endif; ?>
                     </div>
                 </div>
@@ -313,24 +318,24 @@ if ($is_episode && $video['series_id']) {
                 <!-- FIXED: Video Container - ALWAYS show for everyone -->
                 <div class="video-container">
                     <div class="video-wrapper">
-                        <iframe id="youtube-player" 
-                                src="<?php echo getYouTubeEmbedUrl($video['youtube_id'], ['start' => $start_time]); ?>" 
-                                frameborder="0" 
-                                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen" 
-                                allowfullscreen>
+                        <iframe id="youtube-player"
+                            src="<?php echo getYouTubeEmbedUrl($video['youtube_id'], ['start' => $start_time]); ?>"
+                            frameborder="0"
+                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
+                            allowfullscreen>
                         </iframe>
-                        
+
                         <!-- FIXED: ONLY show subtitle elements for active users -->
                         <?php if ($user_id && userHasSubtitleAccess($user_status) && !empty($subtitles_data)): ?>
                             <div id="subtitles-overlay"></div>
                             <div id="fullscreen-subtitles"></div>
-                            
+
                             <div class="subtitle-controls">
                                 <select id="subtitle-language">
                                     <option value="">No subtitles</option>
                                     <?php foreach ($available_subtitles as $subtitle): ?>
-                                        <option value="<?php echo $subtitle['language']; ?>" 
-                                                <?php echo ($subtitle['language'] === 'en') ? 'selected' : ''; ?>>
+                                        <option value="<?php echo $subtitle['language']; ?>"
+                                            <?php echo ($subtitle['language'] === 'en') ? 'selected' : ''; ?>>
                                             <?php echo htmlspecialchars($subtitle['language_name']); ?>
                                         </option>
                                     <?php endforeach; ?>
@@ -347,19 +352,19 @@ if ($is_episode && $video['series_id']) {
                         <div class="description">
                             <?php echo nl2br(htmlspecialchars($video['description'])); ?>
                         </div>
-                        
+
                         <?php if ($video['director']): ?>
                             <p><strong>Director:</strong> <?php echo htmlspecialchars($video['director']); ?></p>
                         <?php endif; ?>
-                        
+
                         <?php if ($video['cast']): ?>
                             <p><strong>Cast:</strong> <?php echo htmlspecialchars($video['cast']); ?></p>
                         <?php endif; ?>
-                        
+
                         <?php if ($video['language']): ?>
                             <p><strong>Language:</strong> <?php echo htmlspecialchars($video['language']); ?></p>
                         <?php endif; ?>
-                        
+
                         <!-- FIXED: Show appropriate messages based on user status -->
                         <?php if (!$user_id): ?>
                             <div class="alert alert-info">
@@ -373,142 +378,142 @@ if ($is_episode && $video['series_id']) {
                     </div>
 
                     <!-- Series Episodes Navigation -->
-                    <?php 
+                    <?php
                     $season_episodes = isset($video['season_episodes']) && is_array($video['season_episodes']) ? $video['season_episodes'] : [];
                     $all_seasons = isset($video['all_seasons']) && is_array($video['all_seasons']) ? $video['all_seasons'] : [];
                     ?>
                     <?php if ($is_episode && !empty($season_episodes)): ?>
-                    <div class="series-navigation">
-                        <h3>Season <?php echo $current_season['season_number']; ?> Episodes</h3>
-                        <div class="episodes-grid">
-                            <?php foreach ($season_episodes as $episode): ?>
-                                <div class="episode-item <?php echo $episode['id'] == $video_id ? 'current' : ''; ?>" 
-                                     onclick="<?php echo $episode['id'] != $video_id ? "window.location.href='watch.php?id=" . $episode['id'] . "'" : ''; ?>">
-                                    <div class="episode-header">
-                                        <span class="episode-number">Episode <?php echo $episode['episode_number']; ?></span>
-                                        <?php if (!empty($episode['completed'])): ?>
-                                            <span class="completed-badge">✓</span>
-                                        <?php endif; ?>
-                                        <?php if ($episode['id'] == $video_id): ?>
-                                            <span class="current-badge">▶ Now Playing</span>
-                                        <?php endif; ?>
+                        <div class="series-navigation">
+                            <h3>Season <?php echo $current_season['season_number']; ?> Episodes</h3>
+                            <div class="episodes-grid">
+                                <?php foreach ($season_episodes as $episode): ?>
+                                    <div class="episode-item <?php echo $episode['id'] == $video_id ? 'current' : ''; ?>"
+                                        onclick="<?php echo $episode['id'] != $video_id ? "window.location.href='watch.php?id=" . $episode['id'] . "'" : ''; ?>">
+                                        <div class="episode-header">
+                                            <span class="episode-number">Episode <?php echo $episode['episode_number']; ?></span>
+                                            <?php if (!empty($episode['completed'])): ?>
+                                                <span class="completed-badge">✓</span>
+                                            <?php endif; ?>
+                                            <?php if ($episode['id'] == $video_id): ?>
+                                                <span class="current-badge">▶ Now Playing</span>
+                                            <?php endif; ?>
+                                        </div>
+                                        <div class="episode-title"><?php echo htmlspecialchars($episode['title']); ?></div>
+                                        <div class="episode-meta">
+                                            <?php if (!empty($episode['duration_seconds'])): ?>
+                                                <span>⏱️ <?php echo formatDuration($episode['duration_seconds']); ?></span>
+                                            <?php endif; ?>
+                                        </div>
                                     </div>
-                                    <div class="episode-title"><?php echo htmlspecialchars($episode['title']); ?></div>
-                                    <div class="episode-meta">
-                                        <?php if (!empty($episode['duration_seconds'])): ?>
-                                            <span>⏱️ <?php echo formatDuration($episode['duration_seconds']); ?></span>
-                                        <?php endif; ?>
+                                <?php endforeach; ?>
+                            </div>
+
+                            <!-- Other Seasons -->
+                            <?php if (!empty($all_seasons) && count($all_seasons) > 1): ?>
+                                <div class="other-seasons">
+                                    <h4>Other Seasons</h4>
+                                    <div class="seasons-list">
+                                        <?php foreach ($all_seasons as $season): ?>
+                                            <?php if ($season['id'] != $video['season_id']): ?>
+                                                <a href="series.php?id=<?php echo $video['series_id']; ?>&season=<?php echo $season['season_number']; ?>"
+                                                    class="season-btn">
+                                                    Season <?php echo $season['season_number']; ?>
+                                                    <small>(<?php echo $season['episode_count']; ?> episodes)</small>
+                                                </a>
+                                            <?php endif; ?>
+                                        <?php endforeach; ?>
                                     </div>
                                 </div>
-                            <?php endforeach; ?>
+                            <?php endif; ?>
                         </div>
-                        
-                        <!-- Other Seasons -->
-                        <?php if (!empty($all_seasons) && count($all_seasons) > 1): ?>
-                        <div class="other-seasons">
-                            <h4>Other Seasons</h4>
-                            <div class="seasons-list">
-                                <?php foreach ($all_seasons as $season): ?>
-                                    <?php if ($season['id'] != $video['season_id']): ?>
-                                        <a href="series.php?id=<?php echo $video['series_id']; ?>&season=<?php echo $season['season_number']; ?>" 
-                                           class="season-btn">
-                                            Season <?php echo $season['season_number']; ?>
-                                            <small>(<?php echo $season['episode_count']; ?> episodes)</small>
-                                        </a>
-                                    <?php endif; ?>
+                    <?php endif; ?>
+
+                    <?php if (!empty($reviews)): ?>
+                        <div class="reviews-section">
+                            <h3>User Reviews</h3>
+                            <div class="reviews-list">
+                                <?php foreach ($reviews as $review): ?>
+                                    <div class="review-item">
+                                        <div class="review-header">
+                                            <span class="reviewer-name"><?php echo htmlspecialchars($review['username']); ?></span>
+                                            <span class="review-rating">
+                                                <?php for ($i = 1; $i <= 5; $i++): ?>
+                                                    <span class="star <?php echo $i <= $review['rating'] ? 'active' : ''; ?>">★</span>
+                                                <?php endfor; ?>
+                                            </span>
+                                            <span class="review-date"><?php echo date('M d, Y', strtotime($review['created_at'])); ?></span>
+                                        </div>
+                                        <div class="review-content">
+                                            <?php echo nl2br(htmlspecialchars($review['review'])); ?>
+                                        </div>
+                                    </div>
                                 <?php endforeach; ?>
                             </div>
                         </div>
-                        <?php endif; ?>
-                    </div>
                     <?php endif; ?>
-                    
-                    <?php if (!empty($reviews)): ?>
-                    <div class="reviews-section">
-                        <h3>User Reviews</h3>
-                        <div class="reviews-list">
-                            <?php foreach ($reviews as $review): ?>
-                                <div class="review-item">
-                                    <div class="review-header">
-                                        <span class="reviewer-name"><?php echo htmlspecialchars($review['username']); ?></span>
-                                        <span class="review-rating">
-                                            <?php for ($i = 1; $i <= 5; $i++): ?>
-                                                <span class="star <?php echo $i <= $review['rating'] ? 'active' : ''; ?>">★</span>
-                                            <?php endfor; ?>
-                                        </span>
-                                        <span class="review-date"><?php echo date('M d, Y', strtotime($review['created_at'])); ?></span>
-                                    </div>
-                                    <div class="review-content">
-                                        <?php echo nl2br(htmlspecialchars($review['review'])); ?>
-                                    </div>
-                                </div>
-                            <?php endforeach; ?>
-                        </div>
-                    </div>
-                    <?php endif; ?>
-                    
+
                     <?php if ($user_id): ?>
-                    <div class="write-review-section">
-                        <h3>Write a Review</h3>
-                        <form id="review-form">
-                            <textarea id="review-text" placeholder="Share your thoughts about this <?php echo $is_episode ? 'episode' : 'video'; ?>..." rows="4"><?php echo $video['user_review'] ? htmlspecialchars($video['user_review']) : ''; ?></textarea>
-                            <button type="submit" class="btn btn-primary">Submit Review</button>
-                        </form>
-                    </div>
+                        <div class="write-review-section">
+                            <h3>Write a Review</h3>
+                            <form id="review-form">
+                                <textarea id="review-text" placeholder="Share your thoughts about this <?php echo $is_episode ? 'episode' : 'video'; ?>..." rows="4"><?php echo $video['user_review'] ? htmlspecialchars($video['user_review']) : ''; ?></textarea>
+                                <button type="submit" class="btn btn-primary">Submit Review</button>
+                            </form>
+                        </div>
                     <?php endif; ?>
                 </div>
             </div>
-            
+
             <!-- Auto-play Next Episode -->
             <?php if ($is_episode && $next_episode): ?>
-            <div id="next-episode-modal" class="next-episode-modal" style="display: none;">
-                <div class="modal-content">
-                    <h3>Up Next</h3>
-                    <div class="next-episode-info">
-                        <img src="<?php echo $next_episode['thumbnail_url'] ?: getYouTubeThumbnail($next_episode['youtube_id']); ?>" 
-                             alt="Next Episode">
-                        <div class="next-episode-text">
-                            <h4>Episode <?php echo $next_episode['episode_number']; ?>: <?php echo htmlspecialchars($next_episode['title']); ?></h4>
-                            <p>Starting in <span id="countdown">10</span> seconds...</p>
+                <div id="next-episode-modal" class="next-episode-modal" style="display: none;">
+                    <div class="modal-content">
+                        <h3>Up Next</h3>
+                        <div class="next-episode-info">
+                            <img src="<?php echo $next_episode['thumbnail_url'] ?: getYouTubeThumbnail($next_episode['youtube_id']); ?>"
+                                alt="Next Episode">
+                            <div class="next-episode-text">
+                                <h4>Episode <?php echo $next_episode['episode_number']; ?>: <?php echo htmlspecialchars($next_episode['title']); ?></h4>
+                                <p>Starting in <span id="countdown">10</span> seconds...</p>
+                            </div>
+                        </div>
+                        <div class="modal-actions">
+                            <button onclick="cancelAutoplay()" class="btn">Cancel</button>
+                            <button onclick="playNextEpisode()" class="btn btn-primary">Play Now</button>
                         </div>
                     </div>
-                    <div class="modal-actions">
-                        <button onclick="cancelAutoplay()" class="btn">Cancel</button>
-                        <button onclick="playNextEpisode()" class="btn btn-primary">Play Now</button>
-                    </div>
                 </div>
-            </div>
             <?php endif; ?>
-            
+
             <?php if (!empty($recommendations)): ?>
-            <div class="recommendations-section">
-                <h2>Recommended for You</h2>
-                <div class="content-grid">
-                    <?php foreach ($recommendations as $rec_video): ?>
-                        <div class="content-card" onclick="window.location.href='watch.php?id=<?php echo $rec_video['id']; ?>'">
-                            <div class="content-thumbnail">
-                                <img src="<?php echo $rec_video['thumbnail_url'] ?: getYouTubeThumbnail($rec_video['youtube_id']); ?>" 
-                                     alt="<?php echo htmlspecialchars($rec_video['title']); ?>">
-                                <div class="play-overlay">
-                                    <div class="play-button">▶</div>
+                <div class="recommendations-section">
+                    <h2>Recommended for You</h2>
+                    <div class="content-grid">
+                        <?php foreach ($recommendations as $rec_video): ?>
+                            <div class="content-card" onclick="window.location.href='watch.php?id=<?php echo $rec_video['id']; ?>'">
+                                <div class="content-thumbnail">
+                                    <img src="<?php echo $rec_video['thumbnail_url'] ?: getYouTubeThumbnail($rec_video['youtube_id']); ?>"
+                                        alt="<?php echo htmlspecialchars($rec_video['title']); ?>">
+                                    <div class="play-overlay">
+                                        <div class="play-button">▶</div>
+                                    </div>
+                                </div>
+                                <div class="content-info">
+                                    <h4><?php echo htmlspecialchars($rec_video['title']); ?></h4>
+                                    <p class="genre"><?php echo htmlspecialchars($rec_video['genres']); ?></p>
+                                    <div class="video-stats">
+                                        <?php if ($rec_video['avg_rating'] > 0): ?>
+                                            <span>⭐ <?php echo number_format($rec_video['avg_rating'], 1); ?></span>
+                                        <?php endif; ?>
+                                    </div>
+                                    <a href="watch.php?id=<?php echo $rec_video['id']; ?>"
+                                        class="btn btn-primary"
+                                        onclick="event.stopPropagation()">Watch Now</a>
                                 </div>
                             </div>
-                            <div class="content-info">
-                                <h4><?php echo htmlspecialchars($rec_video['title']); ?></h4>
-                                <p class="genre"><?php echo htmlspecialchars($rec_video['genres']); ?></p>
-                                <div class="video-stats">
-                                    <?php if ($rec_video['avg_rating'] > 0): ?>
-                                        <span>⭐ <?php echo number_format($rec_video['avg_rating'], 1); ?></span>
-                                    <?php endif; ?>
-                                </div>
-                                <a href="watch.php?id=<?php echo $rec_video['id']; ?>" 
-                                   class="btn btn-primary"
-                                   onclick="event.stopPropagation()">Watch Now</a>
-                            </div>
-                        </div>
-                    <?php endforeach; ?>
+                        <?php endforeach; ?>
+                    </div>
                 </div>
-            </div>
             <?php endif; ?>
         </div>
     </main>
@@ -518,14 +523,14 @@ if ($is_episode && $video['series_id']) {
             margin: 1rem 0;
             text-align: center;
         }
-        
+
         .episode-nav-buttons {
             display: flex;
             justify-content: center;
             gap: 1rem;
             flex-wrap: wrap;
         }
-        
+
         .current-badge {
             background: #28a745;
             color: white;
@@ -533,20 +538,20 @@ if ($is_episode && $video['series_id']) {
             border-radius: 12px;
             font-size: 0.7rem;
         }
-        
+
         .next-episode-modal {
             position: fixed;
             top: 0;
             left: 0;
             width: 100%;
             height: 100%;
-            background: rgba(0,0,0,0.8);
+            background: rgba(0, 0, 0, 0.8);
             z-index: 1000;
             display: flex;
             align-items: center;
             justify-content: center;
         }
-        
+
         .modal-content {
             background: rgba(30, 30, 46, 0.95);
             padding: 2rem;
@@ -555,44 +560,44 @@ if ($is_episode && $video['series_id']) {
             width: 90%;
             text-align: center;
         }
-        
+
         .next-episode-info {
             display: flex;
             gap: 1rem;
             margin: 1rem 0;
             align-items: center;
         }
-        
+
         .next-episode-info img {
             width: 120px;
             height: 68px;
             object-fit: cover;
             border-radius: 6px;
         }
-        
+
         .next-episode-text {
             flex: 1;
             text-align: left;
         }
-        
+
         .modal-actions {
             display: flex;
             gap: 1rem;
             justify-content: center;
             margin-top: 1rem;
         }
-        
+
         @media (max-width: 768px) {
             .episode-nav-buttons {
                 flex-direction: column;
                 align-items: center;
             }
-            
+
             .next-episode-info {
                 flex-direction: column;
                 text-align: center;
             }
-            
+
             .next-episode-text {
                 text-align: center;
             }
@@ -609,14 +614,14 @@ if ($is_episode && $video['series_id']) {
         let availableSubtitles = <?php echo json_encode($available_subtitles); ?>;
         let autoplayTimer = null;
         let countdownTimer = null;
-        
+
         // Load YouTube API
         function loadYouTubeAPI() {
             if (window.YT) {
                 onYouTubeIframeAPIReady();
                 return;
             }
-            
+
             const tag = document.createElement('script');
             tag.src = 'https://www.youtube.com/iframe_api';
             const firstScriptTag = document.getElementsByTagName('script')[0];
@@ -635,13 +640,13 @@ if ($is_episode && $video['series_id']) {
         function onPlayerReady(event) {
             // FIXED: Only start subtitle sync if subtitles are available
             <?php if ($user_id && userHasSubtitleAccess($user_status) && !empty($subtitles_data)): ?>
-            startSubtitleSync();
-            setupFullscreenDetection();
+                startSubtitleSync();
+                setupFullscreenDetection();
             <?php endif; ?>
             setupProgressTracking();
-            
+
             <?php if ($start_time > 0): ?>
-            player.seekTo(<?php echo $start_time; ?>, true);
+                player.seekTo(<?php echo $start_time; ?>, true);
             <?php endif; ?>
         }
 
@@ -650,163 +655,165 @@ if ($is_episode && $video['series_id']) {
                 trackVideoProgress();
             } else if (event.data === YT.PlayerState.ENDED) {
                 <?php if ($is_episode && $next_episode): ?>
-                showNextEpisodeModal();
+                    showNextEpisodeModal();
                 <?php endif; ?>
             }
         }
 
         // Next episode functionality
         <?php if ($is_episode && $next_episode): ?>
-        function showNextEpisodeModal() {
-            const modal = document.getElementById('next-episode-modal');
-            if (modal) {
-                modal.style.display = 'flex';
-                startCountdown();
-            }
-        }
 
-        function startCountdown() {
-            let seconds = 10;
-            const countdownElement = document.getElementById('countdown');
-            
-            countdownTimer = setInterval(() => {
-                countdownElement.textContent = seconds;
-                seconds--;
-                
-                if (seconds < 0) {
-                    playNextEpisode();
+            function showNextEpisodeModal() {
+                const modal = document.getElementById('next-episode-modal');
+                if (modal) {
+                    modal.style.display = 'flex';
+                    startCountdown();
                 }
-            }, 1000);
-            
-            // Auto-play after 10 seconds
-            autoplayTimer = setTimeout(() => {
-                playNextEpisode();
-            }, 10000);
-        }
+            }
 
-        function playNextEpisode() {
-            window.location.href = 'watch.php?id=<?php echo $next_episode['id']; ?>';
-        }
+            function startCountdown() {
+                let seconds = 10;
+                const countdownElement = document.getElementById('countdown');
 
-        function cancelAutoplay() {
-            const modal = document.getElementById('next-episode-modal');
-            if (modal) {
-                modal.style.display = 'none';
+                countdownTimer = setInterval(() => {
+                    countdownElement.textContent = seconds;
+                    seconds--;
+
+                    if (seconds < 0) {
+                        playNextEpisode();
+                    }
+                }, 1000);
+
+                // Auto-play after 10 seconds
+                autoplayTimer = setTimeout(() => {
+                    playNextEpisode();
+                }, 10000);
             }
-            
-            if (autoplayTimer) {
-                clearTimeout(autoplayTimer);
+
+            function playNextEpisode() {
+                window.location.href = 'watch.php?id=<?php echo $next_episode['id']; ?>';
             }
-            
-            if (countdownTimer) {
-                clearInterval(countdownTimer);
+
+            function cancelAutoplay() {
+                const modal = document.getElementById('next-episode-modal');
+                if (modal) {
+                    modal.style.display = 'none';
+                }
+
+                if (autoplayTimer) {
+                    clearTimeout(autoplayTimer);
+                }
+
+                if (countdownTimer) {
+                    clearInterval(countdownTimer);
+                }
             }
-        }
         <?php endif; ?>
 
         // FIXED: Only define subtitle functions if subtitles are available
         <?php if ($user_id && userHasSubtitleAccess($user_status) && !empty($subtitles_data)): ?>
-        function startSubtitleSync() {
-            if (subtitleInterval) {
-                clearInterval(subtitleInterval);
+
+            function startSubtitleSync() {
+                if (subtitleInterval) {
+                    clearInterval(subtitleInterval);
+                }
+
+                if (currentSubtitles.length === 0) {
+                    return;
+                }
+
+                subtitleInterval = setInterval(() => {
+                    if (player && player.getCurrentTime) {
+                        const currentTime = player.getCurrentTime() + (subtitleOffset / 1000);
+                        const currentSubtitle = currentSubtitles.find(sub =>
+                            currentTime >= sub.start_time && currentTime <= sub.end_time
+                        );
+
+                        updateSubtitleDisplay(currentSubtitle ? currentSubtitle.text : '');
+                    }
+                }, 100);
             }
 
-            if (currentSubtitles.length === 0) {
-                return;
+            function updateSubtitleDisplay(text) {
+                const normalOverlay = document.getElementById('subtitles-overlay');
+                const fullscreenOverlay = document.getElementById('fullscreen-subtitles');
+
+                if (text) {
+                    if (normalOverlay) {
+                        normalOverlay.textContent = text;
+                        normalOverlay.style.display = isFullscreen ? 'none' : 'block';
+                    }
+
+                    if (fullscreenOverlay) {
+                        fullscreenOverlay.textContent = text;
+                        fullscreenOverlay.style.display = isFullscreen ? 'block' : 'none';
+                    }
+                } else {
+                    if (normalOverlay) normalOverlay.style.display = 'none';
+                    if (fullscreenOverlay) fullscreenOverlay.style.display = 'none';
+                }
             }
 
-            subtitleInterval = setInterval(() => {
-                if (player && player.getCurrentTime) {
+            function setupFullscreenDetection() {
+                document.addEventListener('fullscreenchange', handleFullscreenChange);
+                document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+                document.addEventListener('mozfullscreenchange', handleFullscreenChange);
+                document.addEventListener('msfullscreenchange', handleFullscreenChange);
+            }
+
+            function handleFullscreenChange() {
+                const fullscreenElement = document.fullscreenElement ||
+                    document.webkitFullscreenElement ||
+                    document.mozFullScreenElement ||
+                    document.msFullscreenElement;
+
+                isFullscreen = !!fullscreenElement;
+                updateSubtitleDisplay(getCurrentSubtitleText());
+            }
+
+            function getCurrentSubtitleText() {
+                if (player && player.getCurrentTime && currentSubtitles.length > 0) {
                     const currentTime = player.getCurrentTime() + (subtitleOffset / 1000);
-                    const currentSubtitle = currentSubtitles.find(sub => 
+                    const currentSubtitle = currentSubtitles.find(sub =>
                         currentTime >= sub.start_time && currentTime <= sub.end_time
                     );
-                    
-                    updateSubtitleDisplay(currentSubtitle ? currentSubtitle.text : '');
+                    return currentSubtitle ? currentSubtitle.text : '';
                 }
-            }, 100);
-        }
-
-        function updateSubtitleDisplay(text) {
-            const normalOverlay = document.getElementById('subtitles-overlay');
-            const fullscreenOverlay = document.getElementById('fullscreen-subtitles');
-            
-            if (text) {
-                if (normalOverlay) {
-                    normalOverlay.textContent = text;
-                    normalOverlay.style.display = isFullscreen ? 'none' : 'block';
-                }
-                
-                if (fullscreenOverlay) {
-                    fullscreenOverlay.textContent = text;
-                    fullscreenOverlay.style.display = isFullscreen ? 'block' : 'none';
-                }
-            } else {
-                if (normalOverlay) normalOverlay.style.display = 'none';
-                if (fullscreenOverlay) fullscreenOverlay.style.display = 'none';
+                return '';
             }
-        }
 
-        function setupFullscreenDetection() {
-            document.addEventListener('fullscreenchange', handleFullscreenChange);
-            document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
-            document.addEventListener('mozfullscreenchange', handleFullscreenChange);
-            document.addEventListener('msfullscreenchange', handleFullscreenChange);
-        }
-
-        function handleFullscreenChange() {
-            const fullscreenElement = document.fullscreenElement || 
-                                    document.webkitFullscreenElement || 
-                                    document.mozFullScreenElement || 
-                                    document.msFullscreenElement;
-            
-            isFullscreen = !!fullscreenElement;
-            updateSubtitleDisplay(getCurrentSubtitleText());
-        }
-
-        function getCurrentSubtitleText() {
-            if (player && player.getCurrentTime && currentSubtitles.length > 0) {
-                const currentTime = player.getCurrentTime() + (subtitleOffset / 1000);
-                const currentSubtitle = currentSubtitles.find(sub => 
-                    currentTime >= sub.start_time && currentTime <= sub.end_time
-                );
-                return currentSubtitle ? currentSubtitle.text : '';
-            }
-            return '';
-        }
-
-        // Subtitle language switching
-        function loadSubtitles(language) {
-            if (!language) {
-                currentSubtitles = [];
-                updateSubtitleDisplay('');
-                return;
-            }
-            
-            fetch(`../ajax/get_subtitles.php?video_id=<?php echo $video_id; ?>&lang=${language}`)
-                .then(response => response.json())
-                .then(data => {
-                    if (data.success) {
-                        currentSubtitles = data.subtitles;
-                    } else {
-                        currentSubtitles = [];
-                    }
-                })
-                .catch(error => {
-                    console.error('Subtitle loading error:', error);
+            // Subtitle language switching
+            function loadSubtitles(language) {
+                if (!language) {
                     currentSubtitles = [];
-                });
-        }
+                    updateSubtitleDisplay('');
+                    return;
+                }
 
-        // Subtitle controls
-        document.getElementById('subtitle-language')?.addEventListener('change', function() {
-            loadSubtitles(this.value);
-        });
+                fetch(`../ajax/get_subtitles.php?video_id=<?php echo $video_id; ?>&lang=${language}`)
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            currentSubtitles = data.subtitles;
+                        } else {
+                            currentSubtitles = [];
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Subtitle loading error:', error);
+                        currentSubtitles = [];
+                    });
+            }
 
-        document.getElementById('subtitle-sync-btn')?.addEventListener('click', function() {
-            subtitleOffset -= 100; // Adjust by -100ms
-            this.textContent = `Sync ${subtitleOffset}ms`;
-        });
+            // Subtitle controls
+            document.getElementById('subtitle-language')?.addEventListener('change', function() {
+                loadSubtitles(this.value);
+            });
+
+            document.getElementById('subtitle-sync-btn')?.addEventListener('click', function() {
+                subtitleOffset -= 100; // Adjust by -100ms
+                this.textContent = `Sync ${subtitleOffset}ms`;
+            });
         <?php endif; ?>
 
         function setupProgressTracking() {
@@ -815,7 +822,7 @@ if ($is_episode && $video['series_id']) {
                     const currentTime = Math.floor(player.getCurrentTime());
                     const duration = Math.floor(player.getDuration());
                     const completed = currentTime >= duration - 30;
-                    
+
                     if (currentTime > 0) {
                         updateProgress(currentTime, duration, completed);
                     }
@@ -825,18 +832,18 @@ if ($is_episode && $video['series_id']) {
 
         function updateProgress(progress, duration, completed) {
             <?php if ($user_id): ?>
-            fetch('../user/ajax/update_progress.php', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    video_id: <?php echo $video_id; ?>,
-                    progress: progress,
-                    duration: duration,
-                    completed: completed
-                })
-            }).catch(error => console.error('Progress tracking error:', error));
+                fetch('../user/ajax/update_progress.php', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        video_id: <?php echo $video_id; ?>,
+                        progress: progress,
+                        duration: duration,
+                        completed: completed
+                    })
+                }).catch(error => console.error('Progress tracking error:', error));
             <?php endif; ?>
         }
 
@@ -846,120 +853,125 @@ if ($is_episode && $video['series_id']) {
 
         // User interactions
         <?php if ($user_id): ?>
-        document.addEventListener('DOMContentLoaded', function() {
-            // Watchlist toggle
-            document.getElementById('watchlist-btn')?.addEventListener('click', function() {
-                const videoId = this.dataset.videoId;
-                const isInWatchlist = this.classList.contains('active');
-                const endpoint = isInWatchlist ? '../user/ajax/remove_watchlist.php' : '../user/ajax/add_watchlist.php';
-                
-                const originalText = this.textContent;
-                this.textContent = '⏳ Processing...';
-                this.disabled = true;
-                
-                fetch(endpoint, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({ video_id: parseInt(videoId) })
-                })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.success) {
-                        this.classList.toggle('active');
-                        this.textContent = this.classList.contains('active') ? '❤️ In Watchlist' : '🤍 Add to Watchlist';
-                    } else {
-                        this.textContent = originalText;
-                        alert('Failed to update watchlist');
-                    }
-                    this.disabled = false;
-                })
-                .catch(error => {
-                    console.error('Watchlist error:', error);
-                    this.textContent = originalText;
-                    this.disabled = false;
-                    alert('An error occurred');
-                });
-            });
+            document.addEventListener('DOMContentLoaded', function() {
+                // Watchlist toggle
+                document.getElementById('watchlist-btn')?.addEventListener('click', function() {
+                    const videoId = this.dataset.videoId;
+                    const isInWatchlist = this.classList.contains('active');
+                    const endpoint = isInWatchlist ? '../user/ajax/remove_watchlist.php' : '../user/ajax/add_watchlist.php';
 
-            // Star rating
-            document.querySelectorAll('.star-rating .star').forEach(star => {
-                star.addEventListener('click', function() {
-                    const rating = parseInt(this.dataset.rating);
-                    const videoId = parseInt(this.parentNode.dataset.videoId);
-                    
-                    fetch('../user/ajax/rate_video.php', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                        },
-                        body: JSON.stringify({ video_id: videoId, rating: rating })
-                    })
-                    .then(response => response.json())
-                    .then(data => {
-                        if (data.success) {
-                            this.parentNode.querySelectorAll('.star').forEach((s, index) => {
-                                s.classList.toggle('active', index < rating);
-                            });
-                            const ratingText = this.parentNode.parentNode.querySelector('.user-rating-text');
-                            if (ratingText) {
-                                ratingText.textContent = `Your rating: ${rating}/5`;
+                    const originalText = this.textContent;
+                    this.textContent = '⏳ Processing...';
+                    this.disabled = true;
+
+                    fetch(endpoint, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                            },
+                            body: JSON.stringify({
+                                video_id: parseInt(videoId)
+                            })
+                        })
+                        .then(response => response.json())
+                        .then(data => {
+                            if (data.success) {
+                                this.classList.toggle('active');
+                                this.textContent = this.classList.contains('active') ? '❤️ In Watchlist' : '🤍 Add to Watchlist';
                             } else {
-                                const newText = document.createElement('span');
-                                newText.className = 'user-rating-text';
-                                newText.textContent = `Your rating: ${rating}/5`;
-                                this.parentNode.parentNode.appendChild(newText);
+                                this.textContent = originalText;
+                                alert('Failed to update watchlist');
                             }
-                        } else {
-                            alert('Failed to save rating');
-                        }
-                    })
-                    .catch(error => {
-                        console.error('Rating error:', error);
-                        alert('An error occurred');
+                            this.disabled = false;
+                        })
+                        .catch(error => {
+                            console.error('Watchlist error:', error);
+                            this.textContent = originalText;
+                            this.disabled = false;
+                            alert('An error occurred');
+                        });
+                });
+
+                // Star rating
+                document.querySelectorAll('.star-rating .star').forEach(star => {
+                    star.addEventListener('click', function() {
+                        const rating = parseInt(this.dataset.rating);
+                        const videoId = parseInt(this.parentNode.dataset.videoId);
+
+                        fetch('../user/ajax/rate_video.php', {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json',
+                                },
+                                body: JSON.stringify({
+                                    video_id: videoId,
+                                    rating: rating
+                                })
+                            })
+                            .then(response => response.json())
+                            .then(data => {
+                                if (data.success) {
+                                    this.parentNode.querySelectorAll('.star').forEach((s, index) => {
+                                        s.classList.toggle('active', index < rating);
+                                    });
+                                    const ratingText = this.parentNode.parentNode.querySelector('.user-rating-text');
+                                    if (ratingText) {
+                                        ratingText.textContent = `Your rating: ${rating}/5`;
+                                    } else {
+                                        const newText = document.createElement('span');
+                                        newText.className = 'user-rating-text';
+                                        newText.textContent = `Your rating: ${rating}/5`;
+                                        this.parentNode.parentNode.appendChild(newText);
+                                    }
+                                } else {
+                                    alert('Failed to save rating');
+                                }
+                            })
+                            .catch(error => {
+                                console.error('Rating error:', error);
+                                alert('An error occurred');
+                            });
                     });
                 });
-            });
 
-            // Review submission
-            document.getElementById('review-form')?.addEventListener('submit', function(e) {
-                e.preventDefault();
-                
-                const reviewText = document.getElementById('review-text').value.trim();
-                
-                fetch('../user/ajax/rate_video.php', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({ 
-                        video_id: <?php echo $video_id; ?>, 
-                        rating: <?php echo $video['user_rating'] ?: 5; ?>, 
-                        review: reviewText 
-                    })
-                })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.success) {
-                        alert('Review saved successfully!');
-                        location.reload();
-                    } else {
-                        alert('Failed to save review');
-                    }
-                })
-                .catch(error => {
-                    console.error('Review error:', error);
-                    alert('An error occurred');
+                // Review submission
+                document.getElementById('review-form')?.addEventListener('submit', function(e) {
+                    e.preventDefault();
+
+                    const reviewText = document.getElementById('review-text').value.trim();
+
+                    fetch('../user/ajax/rate_video.php', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                            },
+                            body: JSON.stringify({
+                                video_id: <?php echo $video_id; ?>,
+                                rating: <?php echo $video['user_rating'] ?: 5; ?>,
+                                review: reviewText
+                            })
+                        })
+                        .then(response => response.json())
+                        .then(data => {
+                            if (data.success) {
+                                alert('Review saved successfully!');
+                                location.reload();
+                            } else {
+                                alert('Failed to save review');
+                            }
+                        })
+                        .catch(error => {
+                            console.error('Review error:', error);
+                            alert('An error occurred');
+                        });
                 });
             });
-        });
         <?php endif; ?>
 
         // Keyboard shortcuts
         document.addEventListener('keydown', function(e) {
             if (player && player.getPlayerState) {
-                switch(e.key) {
+                switch (e.key) {
                     case ' ': // Spacebar - play/pause
                         e.preventDefault();
                         if (player.getPlayerState() === YT.PlayerState.PLAYING) {
@@ -985,22 +997,22 @@ if ($is_episode && $video['series_id']) {
                             document.querySelector('.video-wrapper').requestFullscreen();
                         }
                         break;
-                    <?php if ($is_episode): ?>
-                    case 'n': // N key - next episode
-                    case 'N':
-                        <?php if ($next_episode): ?>
-                        e.preventDefault();
-                        window.location.href = 'watch.php?id=<?php echo $next_episode['id']; ?>';
+                        <?php if ($is_episode): ?>
+                        case 'n': // N key - next episode
+                        case 'N':
+                            <?php if ($next_episode): ?>
+                                e.preventDefault();
+                                window.location.href = 'watch.php?id=<?php echo $next_episode['id']; ?>';
+                            <?php endif; ?>
+                            break;
+                        case 'p': // P key - previous episode
+                        case 'P':
+                            <?php if ($prev_episode): ?>
+                                e.preventDefault();
+                                window.location.href = 'watch.php?id=<?php echo $prev_episode['id']; ?>';
+                            <?php endif; ?>
+                            break;
                         <?php endif; ?>
-                        break;
-                    case 'p': // P key - previous episode
-                    case 'P':
-                        <?php if ($prev_episode): ?>
-                        e.preventDefault();
-                        window.location.href = 'watch.php?id=<?php echo $prev_episode['id']; ?>';
-                        <?php endif; ?>
-                        break;
-                    <?php endif; ?>
                 }
             }
         });
@@ -1008,7 +1020,7 @@ if ($is_episode && $video['series_id']) {
         // Initialize when page loads
         document.addEventListener('DOMContentLoaded', function() {
             loadYouTubeAPI();
-            
+
             // Add keyboard navigation hints
             const hints = document.createElement('div');
             hints.innerHTML = `
@@ -1016,23 +1028,23 @@ if ($is_episode && $video['series_id']) {
                     <strong>Controls:</strong> Space=Play/Pause, ←/→=Seek, F=Fullscreen<?php if ($is_episode && ($next_episode || $prev_episode)): ?>, N=Next<?php if ($prev_episode): ?>, P=Previous<?php endif; ?><?php endif; ?>
                 </div>
             `;
-            
+
             // Auto-hide hints after 5 seconds
             setTimeout(() => {
                 if (hints.parentNode) {
                     hints.remove();
                 }
             }, 5000);
-            
+
             document.body.appendChild(hints);
         });
 
         // Cleanup on page unload
         window.addEventListener('beforeunload', function() {
             <?php if ($user_id && userHasSubtitleAccess($user_status)): ?>
-            if (subtitleInterval) {
-                clearInterval(subtitleInterval);
-            }
+                if (subtitleInterval) {
+                    clearInterval(subtitleInterval);
+                }
             <?php endif; ?>
             if (autoplayTimer) {
                 clearTimeout(autoplayTimer);
@@ -1043,4 +1055,5 @@ if ($is_episode && $video['series_id']) {
         });
     </script>
 </body>
+
 </html>

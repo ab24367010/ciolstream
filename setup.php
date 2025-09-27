@@ -6,7 +6,8 @@ ini_set('display_errors', 1);
 $setup_steps = [];
 $errors = [];
 
-function addStep($step, $status, $message = '') {
+function addStep($step, $status, $message = '')
+{
     global $setup_steps;
     $setup_steps[] = [
         'step' => $step,
@@ -15,7 +16,8 @@ function addStep($step, $status, $message = '') {
     ];
 }
 
-function addError($error) {
+function addError($error)
+{
     global $errors;
     $errors[] = $error;
 }
@@ -70,20 +72,22 @@ foreach ($directories as $name => $path) {
 $db_config_exists = file_exists('config/database.php');
 if ($db_config_exists) {
     addStep('Database Config', 'success', 'config/database.php found');
-    
+
     // Try to connect
     try {
         require_once 'config/database.php';
         addStep('Database Connection', 'success', 'Connected successfully');
-        
+
         // Check if tables exist - FIXED: removed prepared statement for SHOW TABLES
+        // Check if tables exist - FIXED for MySQL 8.0.43
         $tables = ['users', 'admins', 'videos', 'subtitles', 'user_progress', 'ratings', 'watchlist', 'series', 'seasons'];
         $existing_tables = [];
-        
+
         foreach ($tables as $table) {
             try {
-                $result = $pdo->query("SHOW TABLES LIKE '$table'");
-                if ($result && $result->rowCount() > 0) {
+                $stmt = $pdo->prepare("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = ?");
+                $stmt->execute([$table]);
+                if ($stmt->fetchColumn() > 0) {
                     $existing_tables[] = $table;
                 }
             } catch (Exception $e) {
@@ -91,13 +95,13 @@ if ($db_config_exists) {
                 continue;
             }
         }
-        
+
         if (count($existing_tables) === count($tables)) {
             addStep('Database Tables', 'success', 'All required tables exist (' . count($existing_tables) . '/' . count($tables) . ')');
         } else {
             addStep('Database Tables', 'warning', 'Some tables missing (' . count($existing_tables) . '/' . count($tables) . '). Run database.sql');
         }
-        
+
         // Test admin user exists
         try {
             $stmt = $pdo->query("SELECT COUNT(*) as count FROM admins WHERE username = 'admin'");
@@ -110,7 +114,6 @@ if ($db_config_exists) {
         } catch (Exception $e) {
             addStep('Default Admin', 'warning', 'Could not check admin user');
         }
-        
     } catch (Exception $e) {
         addStep('Database Connection', 'error', 'Connection failed: ' . $e->getMessage());
         addError('Database connection failed: ' . $e->getMessage());
@@ -151,15 +154,19 @@ if ($max_upload < 50 * 1024 * 1024) { // 50MB
     $recommendations[] = "Increase upload_max_filesize to at least 50M for subtitle uploads";
 }
 
-function return_bytes($val) {
+function return_bytes($val)
+{
     $val = trim($val);
     if (empty($val)) return 0;
-    $last = strtolower($val[strlen($val)-1]);
+    $last = strtolower($val[strlen($val) - 1]);
     $val = (int) $val;
-    switch($last) {
-        case 'g': $val *= 1024;
-        case 'm': $val *= 1024;
-        case 'k': $val *= 1024;
+    switch ($last) {
+        case 'g':
+            $val *= 1024;
+        case 'm':
+            $val *= 1024;
+        case 'k':
+            $val *= 1024;
     }
     return $val;
 }
@@ -167,12 +174,18 @@ function return_bytes($val) {
 
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>MovieStream v0.2.0 Setup</title>
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             background: linear-gradient(135deg, #1e1e2e 0%, #2d2d44 100%);
@@ -180,20 +193,23 @@ function return_bytes($val) {
             min-height: 100vh;
             padding: 2rem;
         }
+
         .container {
             max-width: 800px;
             margin: 0 auto;
-            background: rgba(255,255,255,0.05);
+            background: rgba(255, 255, 255, 0.05);
             border-radius: 12px;
             padding: 2rem;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
         }
+
         .header {
             text-align: center;
             margin-bottom: 2rem;
             padding-bottom: 1rem;
             border-bottom: 2px solid #667eea;
         }
+
         .header h1 {
             font-size: 2.5rem;
             margin-bottom: 0.5rem;
@@ -202,6 +218,7 @@ function return_bytes($val) {
             -webkit-text-fill-color: transparent;
             background-clip: text;
         }
+
         .step {
             display: flex;
             align-items: center;
@@ -209,12 +226,14 @@ function return_bytes($val) {
             padding: 1rem;
             margin-bottom: 0.5rem;
             border-radius: 8px;
-            background: rgba(255,255,255,0.05);
+            background: rgba(255, 255, 255, 0.05);
         }
+
         .step-name {
             font-weight: 500;
             flex: 1;
         }
+
         .step-status {
             padding: 0.3rem 0.8rem;
             border-radius: 15px;
@@ -222,42 +241,51 @@ function return_bytes($val) {
             font-weight: bold;
             margin-right: 1rem;
         }
+
         .status-success {
             background: #28a745;
             color: white;
         }
+
         .status-warning {
             background: #ffc107;
             color: #000;
         }
+
         .status-error {
             background: #dc3545;
             color: white;
         }
+
         .step-message {
             font-size: 0.9rem;
             color: #ccc;
             max-width: 300px;
             text-align: right;
         }
+
         .summary {
             margin-top: 2rem;
             padding: 1.5rem;
             border-radius: 8px;
             text-align: center;
         }
+
         .summary.success {
             background: rgba(40, 167, 69, 0.2);
             border: 1px solid #28a745;
         }
+
         .summary.error {
             background: rgba(220, 53, 69, 0.2);
             border: 1px solid #dc3545;
         }
+
         .summary.warning {
             background: rgba(255, 193, 7, 0.2);
             border: 1px solid #ffc107;
         }
+
         .errors {
             margin-top: 1rem;
             padding: 1rem;
@@ -265,14 +293,17 @@ function return_bytes($val) {
             border-radius: 8px;
             border-left: 4px solid #dc3545;
         }
+
         .errors h3 {
             color: #dc3545;
             margin-bottom: 0.5rem;
         }
+
         .errors ul {
             list-style-position: inside;
             color: #ffcccb;
         }
+
         .recommendations {
             margin-top: 1rem;
             padding: 1rem;
@@ -280,14 +311,17 @@ function return_bytes($val) {
             border-radius: 8px;
             border-left: 4px solid #ffc107;
         }
+
         .recommendations h3 {
             color: #ffc107;
             margin-bottom: 0.5rem;
         }
+
         .recommendations ul {
             list-style-position: inside;
             color: #fff3cd;
         }
+
         .action-buttons {
             margin-top: 2rem;
             text-align: center;
@@ -296,6 +330,7 @@ function return_bytes($val) {
             justify-content: center;
             flex-wrap: wrap;
         }
+
         .btn {
             padding: 0.8rem 2rem;
             border: none;
@@ -306,54 +341,65 @@ function return_bytes($val) {
             text-decoration: none;
             display: inline-block;
         }
+
         .btn-primary {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
         }
+
         .btn-primary:hover {
             transform: translateY(-2px);
             box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
         }
+
         .btn-secondary {
-            background: rgba(255,255,255,0.1);
+            background: rgba(255, 255, 255, 0.1);
             color: white;
         }
+
         .btn-secondary:hover {
-            background: rgba(255,255,255,0.2);
+            background: rgba(255, 255, 255, 0.2);
         }
+
         .progress-bar {
             width: 100%;
             height: 8px;
-            background: rgba(255,255,255,0.1);
+            background: rgba(255, 255, 255, 0.1);
             border-radius: 4px;
             overflow: hidden;
             margin: 1rem 0;
         }
+
         .progress-fill {
             height: 100%;
             background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
             transition: width 0.3s ease;
         }
+
         .installation-guide {
             margin-top: 2rem;
             padding: 1.5rem;
-            background: rgba(255,255,255,0.05);
+            background: rgba(255, 255, 255, 0.05);
             border-radius: 8px;
         }
+
         .installation-guide h3 {
             color: #667eea;
             margin-bottom: 1rem;
         }
+
         .installation-guide ol {
             list-style-position: inside;
             color: #ccc;
             line-height: 1.8;
         }
+
         .installation-guide li {
             margin-bottom: 0.5rem;
         }
+
         .installation-guide code {
-            background: rgba(0,0,0,0.3);
+            background: rgba(0, 0, 0, 0.3);
             padding: 0.2rem 0.5rem;
             border-radius: 3px;
             font-family: 'Courier New', monospace;
@@ -361,6 +407,7 @@ function return_bytes($val) {
         }
     </style>
 </head>
+
 <body>
     <div class="container">
         <div class="header">
@@ -370,7 +417,9 @@ function return_bytes($val) {
         </div>
 
         <?php
-        $success_count = count(array_filter($setup_steps, function($step) { return $step['status'] === 'success'; }));
+        $success_count = count(array_filter($setup_steps, function ($step) {
+            return $step['status'] === 'success';
+        }));
         $total_count = count($setup_steps);
         $progress_percentage = ($success_count / $total_count) * 100;
         ?>
@@ -387,9 +436,9 @@ function return_bytes($val) {
                 <div class="step">
                     <div class="step-name"><?php echo htmlspecialchars($step['step']); ?></div>
                     <div class="step-status status-<?php echo $step['status']; ?>">
-                        <?php 
+                        <?php
                         $icons = ['success' => '✓', 'warning' => '!', 'error' => '✗'];
-                        echo $icons[$step['status']] . ' ' . ucfirst($step['status']); 
+                        echo $icons[$step['status']] . ' ' . ucfirst($step['status']);
                         ?>
                     </div>
                     <?php if ($step['message']): ?>
@@ -476,4 +525,5 @@ function return_bytes($val) {
         }
     </script>
 </body>
+
 </html>

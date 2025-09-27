@@ -17,7 +17,7 @@ if (isset($_POST['change_status']) && isset($_POST['user_id'])) {
     $user_id = (int)$_POST['user_id'];
     $new_status = $_POST['new_status'] === 'active' ? 'active' : 'inactive';
     $duration = isset($_POST['duration']) ? (int)$_POST['duration'] : 1;
-    
+
     if ($new_status === 'active') {
         $expiry_date = date('Y-m-d', strtotime("+{$duration} month"));
         $stmt = $pdo->prepare("UPDATE users SET status = ?, expiry_date = ? WHERE id = ?");
@@ -33,14 +33,53 @@ if (isset($_POST['change_status']) && isset($_POST['user_id'])) {
 // Handle video upload
 if (isset($_POST['add_video'])) {
     $title = trim($_POST['title']);
+    $content_type = $_POST['content_type'] ?? 'movie';
     $genre = trim($_POST['genre']);
     $youtube_id = trim($_POST['youtube_id']);
     $description = trim($_POST['description']);
-    
+    $series_id = !empty($_POST['series_id']) ? (int)$_POST['series_id'] : null;
+    $season_id = !empty($_POST['season_id']) ? (int)$_POST['season_id'] : null;
+    $episode_number = !empty($_POST['episode_number']) ? (int)$_POST['episode_number'] : null;
+    $duration_seconds = !empty($_POST['duration_seconds']) ? (int)$_POST['duration_seconds'] : 0;
+    $release_year = !empty($_POST['release_year']) ? (int)$_POST['release_year'] : null;
+    $tags = trim($_POST['tags']) ?: null;
+
     if (!empty($title) && !empty($genre) && !empty($youtube_id)) {
         $thumbnail_url = getYouTubeThumbnail($youtube_id);
-        $stmt = $pdo->prepare("INSERT INTO videos (title, genre, youtube_id, description, thumbnail_url) VALUES (?, ?, ?, ?, ?)");
-        if ($stmt->execute([$title, $genre, $youtube_id, $description, $thumbnail_url])) {
+
+        $stmt = $pdo->prepare("
+            INSERT INTO videos (title, content_type, genre, youtube_id, description, thumbnail_url, 
+                               series_id, season_id, episode_number, duration_seconds, release_year, tags) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ");
+
+        if ($stmt->execute([
+            $title,
+            $content_type,
+            $genre,
+            $youtube_id,
+            $description,
+            $thumbnail_url,
+            $series_id,
+            $season_id,
+            $episode_number,
+            $duration_seconds,
+            $release_year,
+            $tags
+        ])) {
+
+            $video_id = $pdo->lastInsertId();
+
+            // Insert into video_genres table
+            $stmt = $pdo->prepare("SELECT id FROM genres WHERE name = ?");
+            $stmt->execute([$genre]);
+            $genre_record = $stmt->fetch();
+
+            if ($genre_record) {
+                $stmt = $pdo->prepare("INSERT INTO video_genres (video_id, genre_id) VALUES (?, ?)");
+                $stmt->execute([$video_id, $genre_record['id']]);
+            }
+
             $success_msg = "Video added successfully!";
         } else {
             $error_msg = "Failed to add video. Please try again.";
@@ -54,20 +93,20 @@ if (isset($_POST['add_video'])) {
 if (isset($_POST['upload_subtitle']) && isset($_FILES['srt_file'])) {
     $video_id = (int)$_POST['video_id'];
     $language = trim($_POST['language']) ?: 'en';
-    
+
     if ($_FILES['srt_file']['error'] === UPLOAD_ERR_OK) {
         $file_tmp = $_FILES['srt_file']['tmp_name'];
         $file_name = sanitizeFilename($_FILES['srt_file']['name']);
         $file_extension = strtolower(pathinfo($file_name, PATHINFO_EXTENSION));
-        
+
         if ($file_extension === 'srt') {
             $upload_path = SUBTITLES_DIR . $video_id . '_' . $language . '.srt';
-            
+
             if (move_uploaded_file($file_tmp, $upload_path)) {
                 // Remove existing subtitle for this video/language
                 $stmt = $pdo->prepare("DELETE FROM subtitles WHERE video_id = ? AND language = ?");
                 $stmt->execute([$video_id, $language]);
-                
+
                 // Insert new subtitle record
                 $stmt = $pdo->prepare("INSERT INTO subtitles (video_id, language, srt_file_path) VALUES (?, ?, ?)");
                 if ($stmt->execute([$video_id, $language, $upload_path])) {
@@ -89,18 +128,18 @@ if (isset($_POST['upload_subtitle']) && isset($_FILES['srt_file'])) {
 // Handle video deletion
 if (isset($_POST['delete_video']) && isset($_POST['video_id'])) {
     $video_id = (int)$_POST['video_id'];
-    
+
     // Delete subtitle files
     $stmt = $pdo->prepare("SELECT srt_file_path FROM subtitles WHERE video_id = ?");
     $stmt->execute([$video_id]);
     $subtitle_files = $stmt->fetchAll();
-    
+
     foreach ($subtitle_files as $file) {
         if (file_exists($file['srt_file_path'])) {
             unlink($file['srt_file_path']);
         }
     }
-    
+
     // Delete video record (cascades to subtitles)
     $stmt = $pdo->prepare("DELETE FROM videos WHERE id = ?");
     if ($stmt->execute([$video_id])) {
@@ -139,12 +178,14 @@ foreach ($videos as $video) {
 
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Admin Dashboard - MovieStream v0.2.0</title>
     <link rel="stylesheet" href="../assets/css/style.css">
 </head>
+
 <body>
     <header>
         <nav class="navbar">
@@ -189,7 +230,7 @@ foreach ($videos as $video) {
             <div id="users-section" class="admin-section">
                 <h2>User Management</h2>
                 <p>Total Users: <?php echo count($users); ?></p>
-                
+
                 <table class="data-table">
                     <thead>
                         <tr>
@@ -204,53 +245,53 @@ foreach ($videos as $video) {
                     </thead>
                     <tbody>
                         <?php foreach ($users as $user): ?>
-                        <tr>
-                            <td><?php echo $user['id']; ?></td>
-                            <td><?php echo htmlspecialchars($user['username']); ?></td>
-                            <td><?php echo htmlspecialchars($user['email']); ?></td>
-                            <td>
-                                <span class="status status-<?php echo $user['status']; ?>">
-                                    <?php echo ucfirst($user['status']); ?>
-                                </span>
-                            </td>
-                            <td>
-                                <?php 
-                                if ($user['expiry_date']) {
-                                    echo date('M d, Y', strtotime($user['expiry_date']));
-                                    if (date('Y-m-d') > $user['expiry_date']) {
-                                        echo ' <span class="expired">(Expired)</span>';
+                            <tr>
+                                <td><?php echo $user['id']; ?></td>
+                                <td><?php echo htmlspecialchars($user['username']); ?></td>
+                                <td><?php echo htmlspecialchars($user['email']); ?></td>
+                                <td>
+                                    <span class="status status-<?php echo $user['status']; ?>">
+                                        <?php echo ucfirst($user['status']); ?>
+                                    </span>
+                                </td>
+                                <td>
+                                    <?php
+                                    if ($user['expiry_date']) {
+                                        echo date('M d, Y', strtotime($user['expiry_date']));
+                                        if (date('Y-m-d') > $user['expiry_date']) {
+                                            echo ' <span class="expired">(Expired)</span>';
+                                        }
+                                    } else {
+                                        echo '-';
                                     }
-                                } else {
-                                    echo '-';
-                                }
-                                ?>
-                            </td>
-                            <td><?php echo date('M d, Y', strtotime($user['created_at'])); ?></td>
-                            <td>
-                                <form method="POST" style="display: inline;">
-                                    <input type="hidden" name="user_id" value="<?php echo $user['id']; ?>">
-                                    <?php if ($user['status'] === 'inactive'): ?>
-                                        <select name="duration" style="width: 80px; margin-right: 5px;">
-                                            <option value="1">1 Month</option>
-                                            <option value="3">3 Months</option>
-                                            <option value="6">6 Months</option>
-                                            <option value="12">1 Year</option>
-                                        </select>
-                                        <input type="hidden" name="new_status" value="active">
-                                        <button type="submit" name="change_status" class="status-btn active"
+                                    ?>
+                                </td>
+                                <td><?php echo date('M d, Y', strtotime($user['created_at'])); ?></td>
+                                <td>
+                                    <form method="POST" style="display: inline;">
+                                        <input type="hidden" name="user_id" value="<?php echo $user['id']; ?>">
+                                        <?php if ($user['status'] === 'inactive'): ?>
+                                            <select name="duration" style="width: 80px; margin-right: 5px;">
+                                                <option value="1">1 Month</option>
+                                                <option value="3">3 Months</option>
+                                                <option value="6">6 Months</option>
+                                                <option value="12">1 Year</option>
+                                            </select>
+                                            <input type="hidden" name="new_status" value="active">
+                                            <button type="submit" name="change_status" class="status-btn active"
                                                 onclick="return confirm('Activate this user?')">
-                                            Activate
-                                        </button>
-                                    <?php else: ?>
-                                        <input type="hidden" name="new_status" value="inactive">
-                                        <button type="submit" name="change_status" class="status-btn inactive"
+                                                Activate
+                                            </button>
+                                        <?php else: ?>
+                                            <input type="hidden" name="new_status" value="inactive">
+                                            <button type="submit" name="change_status" class="status-btn inactive"
                                                 onclick="return confirm('Deactivate this user?')">
-                                            Deactivate
-                                        </button>
-                                    <?php endif; ?>
-                                </form>
-                            </td>
-                        </tr>
+                                                Deactivate
+                                            </button>
+                                        <?php endif; ?>
+                                    </form>
+                                </td>
+                            </tr>
                         <?php endforeach; ?>
                     </tbody>
                 </table>
@@ -259,7 +300,7 @@ foreach ($videos as $video) {
             <!-- Videos Management Section -->
             <div id="videos-section" class="admin-section" style="display: none;">
                 <h2>Video Management</h2>
-                
+
                 <div class="add-video-form">
                     <h3>Add New Video</h3>
                     <form method="POST">
@@ -269,12 +310,67 @@ foreach ($videos as $video) {
                                 <input type="text" name="title" required>
                             </div>
                             <div class="form-group">
+                                <label for="content_type">Content Type:</label>
+                                <select name="content_type" id="content_type" onchange="toggleSeriesFields()">
+                                    <option value="movie">Movie</option>
+                                    <option value="episode">TV Episode</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
                                 <label for="genre">Genre:</label>
-                                <input type="text" name="genre" required placeholder="e.g. Action, Comedy, Drama">
+                                <select name="genre" required>
+                                    <option value="">Select Genre...</option>
+                                    <?php
+                                    $stmt = $pdo->prepare("SELECT name FROM genres WHERE is_active = TRUE ORDER BY name");
+                                    $stmt->execute();
+                                    $genres = $stmt->fetchAll();
+                                    foreach ($genres as $g): ?>
+                                        <option value="<?php echo htmlspecialchars($g['name']); ?>">
+                                            <?php echo htmlspecialchars($g['name']); ?>
+                                        </option>
+                                    <?php endforeach; ?>
+                                </select>
                             </div>
                             <div class="form-group">
                                 <label for="youtube_id">YouTube ID:</label>
                                 <input type="text" name="youtube_id" required placeholder="dQw4w9WgXcQ">
+                            </div>
+                            <div class="form-group series-fields" style="display: none;">
+                                <label for="series_id">Series:</label>
+                                <select name="series_id" id="series_id" onchange="loadSeasons()">
+                                    <option value="">Select Series...</option>
+                                    <?php
+                                    $stmt = $pdo->prepare("SELECT id, title FROM series WHERE status = 'active' ORDER BY title");
+                                    $stmt->execute();
+                                    $series = $stmt->fetchAll();
+                                    foreach ($series as $s): ?>
+                                        <option value="<?php echo $s['id']; ?>">
+                                            <?php echo htmlspecialchars($s['title']); ?>
+                                        </option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
+                            <div class="form-group series-fields" style="display: none;">
+                                <label for="season_id">Season:</label>
+                                <select name="season_id" id="season_id">
+                                    <option value="">Select Season...</option>
+                                </select>
+                            </div>
+                            <div class="form-group series-fields" style="display: none;">
+                                <label for="episode_number">Episode Number:</label>
+                                <input type="number" name="episode_number" min="1">
+                            </div>
+                            <div class="form-group">
+                                <label for="duration_seconds">Duration (seconds):</label>
+                                <input type="number" name="duration_seconds" min="0" placeholder="3600">
+                            </div>
+                            <div class="form-group">
+                                <label for="release_year">Release Year:</label>
+                                <input type="number" name="release_year" min="1900" max="2030" placeholder="2024">
+                            </div>
+                            <div class="form-group">
+                                <label for="tags">Tags (comma-separated):</label>
+                                <input type="text" name="tags" placeholder="action, adventure, sci-fi">
                             </div>
                             <div class="form-group">
                                 <label for="description">Description:</label>
@@ -284,6 +380,40 @@ foreach ($videos as $video) {
                         <button type="submit" name="add_video" class="btn btn-primary">Add Video</button>
                     </form>
                 </div>
+
+                <script>
+                    function toggleSeriesFields() {
+                        const contentType = document.getElementById('content_type').value;
+                        const seriesFields = document.querySelectorAll('.series-fields');
+
+                        seriesFields.forEach(field => {
+                            field.style.display = contentType === 'episode' ? 'block' : 'none';
+                        });
+                    }
+
+                    function loadSeasons() {
+                        const seriesId = document.getElementById('series_id').value;
+                        const seasonSelect = document.getElementById('season_id');
+
+                        seasonSelect.innerHTML = '<option value="">Select Season...</option>';
+
+                        if (seriesId) {
+                            fetch('../ajax/get_seasons.php?series_id=' + seriesId)
+                                .then(response => response.json())
+                                .then(data => {
+                                    if (data.success) {
+                                        data.seasons.forEach(season => {
+                                            const option = document.createElement('option');
+                                            option.value = season.id;
+                                            option.textContent = `Season ${season.season_number}: ${season.title}`;
+                                            seasonSelect.appendChild(option);
+                                        });
+                                    }
+                                })
+                                .catch(error => console.error('Error loading seasons:', error));
+                        }
+                    }
+                </script>
 
                 <h3>All Videos (<?php echo count($videos_grouped); ?>)</h3>
                 <table class="data-table">
@@ -300,35 +430,35 @@ foreach ($videos as $video) {
                     </thead>
                     <tbody>
                         <?php foreach ($videos_grouped as $video): ?>
-                        <tr>
-                            <td><?php echo $video['id']; ?></td>
-                            <td>
-                                <img src="<?php echo $video['thumbnail_url']; ?>" 
-                                     alt="Thumbnail" 
-                                     style="width: 60px; height: 45px; object-fit: cover;">
-                            </td>
-                            <td><?php echo htmlspecialchars($video['title']); ?></td>
-                            <td><?php echo htmlspecialchars($video['genre']); ?></td>
-                            <td><?php echo htmlspecialchars($video['youtube_id']); ?></td>
-                            <td>
-                                <?php if (!empty($video['subtitles'])): ?>
-                                    <?php foreach ($video['subtitles'] as $sub): ?>
-                                        <span class="subtitle-badge"><?php echo strtoupper($sub['language']); ?></span>
-                                    <?php endforeach; ?>
-                                <?php else: ?>
-                                    <span class="no-subtitles">None</span>
-                                <?php endif; ?>
-                            </td>
-                            <td>
-                                <form method="POST" style="display: inline;">
-                                    <input type="hidden" name="video_id" value="<?php echo $video['id']; ?>">
-                                    <button type="submit" name="delete_video" class="status-btn inactive"
+                            <tr>
+                                <td><?php echo $video['id']; ?></td>
+                                <td>
+                                    <img src="<?php echo $video['thumbnail_url']; ?>"
+                                        alt="Thumbnail"
+                                        style="width: 60px; height: 45px; object-fit: cover;">
+                                </td>
+                                <td><?php echo htmlspecialchars($video['title']); ?></td>
+                                <td><?php echo htmlspecialchars($video['genre']); ?></td>
+                                <td><?php echo htmlspecialchars($video['youtube_id']); ?></td>
+                                <td>
+                                    <?php if (!empty($video['subtitles'])): ?>
+                                        <?php foreach ($video['subtitles'] as $sub): ?>
+                                            <span class="subtitle-badge"><?php echo strtoupper($sub['language']); ?></span>
+                                        <?php endforeach; ?>
+                                    <?php else: ?>
+                                        <span class="no-subtitles">None</span>
+                                    <?php endif; ?>
+                                </td>
+                                <td>
+                                    <form method="POST" style="display: inline;">
+                                        <input type="hidden" name="video_id" value="<?php echo $video['id']; ?>">
+                                        <button type="submit" name="delete_video" class="status-btn inactive"
                                             onclick="return confirm('Delete this video and all its subtitles?')">
-                                        Delete
-                                    </button>
-                                </form>
-                            </td>
-                        </tr>
+                                            Delete
+                                        </button>
+                                    </form>
+                                </td>
+                            </tr>
                         <?php endforeach; ?>
                     </tbody>
                 </table>
@@ -337,7 +467,7 @@ foreach ($videos as $video) {
             <!-- Subtitles Management Section -->
             <div id="subtitles-section" class="admin-section" style="display: none;">
                 <h2>Subtitles Management</h2>
-                
+
                 <div class="upload-subtitle-form">
                     <h3>Upload Subtitle File</h3>
                     <form method="POST" enctype="multipart/form-data">
@@ -380,23 +510,23 @@ foreach ($videos as $video) {
                         <?php foreach ($videos_grouped as $video): ?>
                             <?php if (!empty($video['subtitles'])): ?>
                                 <?php foreach ($video['subtitles'] as $subtitle): ?>
-                                <tr>
-                                    <td><?php echo htmlspecialchars($video['title']); ?></td>
-                                    <td><?php echo strtoupper($subtitle['language']); ?></td>
-                                    <td>
-                                        <?php if (file_exists($subtitle['file_path'])): ?>
-                                            <span class="status-active">✓ Available</span>
-                                        <?php else: ?>
-                                            <span class="status-inactive">✗ Missing</span>
-                                        <?php endif; ?>
-                                    </td>
-                                    <td>
-                                        <?php if (file_exists($subtitle['file_path'])): ?>
-                                            <a href="download_subtitle.php?video_id=<?php echo $video['id']; ?>&lang=<?php echo $subtitle['language']; ?>" 
-                                               class="btn btn-small">Download</a>
-                                        <?php endif; ?>
-                                    </td>
-                                </tr>
+                                    <tr>
+                                        <td><?php echo htmlspecialchars($video['title']); ?></td>
+                                        <td><?php echo strtoupper($subtitle['language']); ?></td>
+                                        <td>
+                                            <?php if (file_exists($subtitle['file_path'])): ?>
+                                                <span class="status-active">✓ Available</span>
+                                            <?php else: ?>
+                                                <span class="status-inactive">✗ Missing</span>
+                                            <?php endif; ?>
+                                        </td>
+                                        <td>
+                                            <?php if (file_exists($subtitle['file_path'])): ?>
+                                                <a href="download_subtitle.php?video_id=<?php echo $video['id']; ?>&lang=<?php echo $subtitle['language']; ?>"
+                                                    class="btn btn-small">Download</a>
+                                            <?php endif; ?>
+                                        </td>
+                                    </tr>
                                 <?php endforeach; ?>
                             <?php else: ?>
                                 <tr>
@@ -417,17 +547,18 @@ foreach ($videos as $video) {
             document.getElementById('users-section').style.display = 'none';
             document.getElementById('videos-section').style.display = 'none';
             document.getElementById('subtitles-section').style.display = 'none';
-            
+
             // Remove active class from all nav buttons
             const navButtons = document.querySelectorAll('.admin-nav .btn');
             navButtons.forEach(btn => btn.classList.remove('active'));
-            
+
             // Show selected section
             document.getElementById(section + '-section').style.display = 'block';
-            
+
             // Add active class to clicked button
             event.target.classList.add('active');
         }
     </script>
 </body>
+
 </html>
