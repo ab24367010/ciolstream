@@ -21,7 +21,18 @@ $input = json_decode(file_get_contents('php://input'), true);
 $video_id = isset($input['video_id']) ? (int)$input['video_id'] : 0;
 $progress_seconds = isset($input['progress']) ? (int)$input['progress'] : 0;
 $total_duration = isset($input['duration']) ? (int)$input['duration'] : 0;
-$completed = isset($input['completed']) ? (bool)$input['completed'] : false;
+
+// Handle completed parameter more robustly
+$completed = false;
+if (isset($input['completed'])) {
+    if (is_bool($input['completed'])) {
+        $completed = $input['completed'];
+    } elseif (is_string($input['completed'])) {
+        $completed = $input['completed'] === 'true' || $input['completed'] === '1';
+    } else {
+        $completed = (bool)$input['completed'];
+    }
+}
 
 if (!$video_id || $progress_seconds < 0) {
     http_response_code(400);

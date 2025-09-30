@@ -1,4 +1,7 @@
 <?php
+// Start session first
+session_start();
+
 // public/series.php - Series page with season/episode navigation v0.2.0 - FIXED
 require_once '../config/database.php';
 require_once '../includes/functions.php';
@@ -12,34 +15,112 @@ if (!$series_id) {
     exit;
 }
 
-// Check if user is logged in and get status
-$user_id = isset($_SESSION['user_id']) ? $_SESSION['user_id'] : null;
-$user_status = null;
-$username = null;
-$expiry_date = null;
+// Get current user session - Match watch.php logic
+$current_user = getCurrentUserSession($pdo);
+$user_id = $current_user ? $current_user['user_id'] : null;
+$user_status = $current_user ? $current_user['status'] : null;
+$username = $current_user ? $current_user['username'] : null;
+$expiry_date = $current_user ? $current_user['expiry_date'] : null;
 
-if ($user_id) {
-    if (isValidUserSession($pdo, $user_id)) {
-        $stmt = $pdo->prepare("SELECT username, status, expiry_date FROM users WHERE id = ?");
-        $stmt->execute([$user_id]);
-        $user = $stmt->fetch();
-        if ($user) {
-            $user_status = $user['status'];
-            $username = $user['username'];
-            $expiry_date = $user['expiry_date'];
-        }
-    } else {
-        unset($_SESSION['user_id']);
-        $user_id = null;
+// Get series details with error handling
+try {
+    $stmt = $pdo->prepare("
+        SELECT s.*,
+               COALESCE(AVG(r.rating), 0) as avg_rating,
+               COUNT(r.rating) as rating_count,
+               s.view_count
+        FROM series s
+        LEFT JOIN ratings r ON s.id = r.series_id
+        WHERE s.id = ? AND s.status = 'active'
+        GROUP BY s.id
+    ");
+    $stmt->execute([$series_id]);
+    $series = $stmt->fetch();
+
+    if (!$series) {
+        header('Location: index.php');
+        exit;
     }
-}
-
-// Get series with all seasons and episodes
-$series = getSeriesWithEpisodes($pdo, $series_id, $user_id);
-
-if (!$series) {
+} catch (Exception $e) {
+    error_log("Error loading series: " . $e->getMessage());
     header('Location: index.php');
     exit;
+}
+
+// Get genres for this series
+try {
+    $stmt = $pdo->prepare("
+        SELECT GROUP_CONCAT(g.name SEPARATOR ', ') as genres
+        FROM series_genres sg
+        JOIN genres g ON sg.genre_id = g.id
+        WHERE sg.series_id = ?
+    ");
+    $stmt->execute([$series_id]);
+    $genre_result = $stmt->fetch();
+    $series['genres'] = $genre_result ? $genre_result['genres'] : '';
+} catch (Exception $e) {
+    error_log("Error loading series genres: " . $e->getMessage());
+    $series['genres'] = '';
+}
+
+// Get seasons with episodes
+try {
+    $stmt = $pdo->prepare("
+        SELECT s.*,
+               COUNT(v.id) as episode_count
+        FROM seasons s
+        LEFT JOIN videos v ON s.id = v.season_id AND v.status = 'active' AND v.content_type = 'episode'
+        WHERE s.series_id = ?
+        GROUP BY s.id
+        ORDER BY s.season_number
+    ");
+    $stmt->execute([$series_id]);
+    $seasons = $stmt->fetchAll();
+} catch (Exception $e) {
+    error_log("Error loading seasons: " . $e->getMessage());
+    $seasons = [];
+}
+
+// Get episodes for each season with user progress if logged in
+$series['seasons'] = [];
+foreach ($seasons as $season) {
+    try {
+        // Build the query differently for logged-in vs non-logged-in users
+        if ($user_id) {
+            $episode_query = "
+                SELECT v.*,
+                       COALESCE(AVG(r.rating), 0) as avg_rating,
+                       up.progress_seconds,
+                       up.completed,
+                       up.last_watched
+                FROM videos v
+                LEFT JOIN ratings r ON v.id = r.video_id
+                LEFT JOIN user_progress up ON v.id = up.video_id AND up.user_id = ?
+                WHERE v.season_id = ? AND v.status = 'active' AND v.content_type = 'episode'
+                GROUP BY v.id, up.progress_seconds, up.completed, up.last_watched
+                ORDER BY v.episode_number";
+            $stmt = $pdo->prepare($episode_query);
+            $stmt->execute([$user_id, $season['id']]);
+        } else {
+            $episode_query = "
+                SELECT v.*,
+                       COALESCE(AVG(r.rating), 0) as avg_rating
+                FROM videos v
+                LEFT JOIN ratings r ON v.id = r.video_id
+                WHERE v.season_id = ? AND v.status = 'active' AND v.content_type = 'episode'
+                GROUP BY v.id
+                ORDER BY v.episode_number";
+            $stmt = $pdo->prepare($episode_query);
+            $stmt->execute([$season['id']]);
+        }
+
+        $season['episodes'] = $stmt->fetchAll();
+        $series['seasons'][] = $season;
+    } catch (Exception $e) {
+        error_log("Error loading episodes for season {$season['id']}: " . $e->getMessage());
+        $season['episodes'] = [];
+        $series['seasons'][] = $season;
+    }
 }
 
 // Find the selected season or default to first
@@ -58,35 +139,51 @@ if (!$current_season && !empty($series['seasons'])) {
 }
 
 // Get series ratings and reviews
-$stmt = $pdo->prepare("
-    SELECT r.*, u.username 
-    FROM ratings r 
-    JOIN users u ON r.user_id = u.id 
-    WHERE r.series_id = ? AND r.review IS NOT NULL AND r.review != ''
-    ORDER BY r.created_at DESC 
-    LIMIT 10
-");
-$stmt->execute([$series_id]);
-$reviews = $stmt->fetchAll();
+try {
+    $stmt = $pdo->prepare("
+        SELECT r.*, u.username
+        FROM ratings r
+        JOIN users u ON r.user_id = u.id
+        WHERE r.series_id = ? AND r.review IS NOT NULL AND r.review != ''
+        ORDER BY r.created_at DESC
+        LIMIT 10
+    ");
+    $stmt->execute([$series_id]);
+    $reviews = $stmt->fetchAll();
+} catch (Exception $e) {
+    error_log("Error loading reviews: " . $e->getMessage());
+    $reviews = [];
+}
 
 // Check if series is in user's watchlist
 $in_watchlist = false;
 if ($user_id) {
-    $stmt = $pdo->prepare("SELECT 1 FROM watchlist WHERE user_id = ? AND series_id = ?");
-    $stmt->execute([$user_id, $series_id]);
-    $in_watchlist = $stmt->fetch() !== false;
+    try {
+        $stmt = $pdo->prepare("SELECT 1 FROM watchlist WHERE user_id = ? AND series_id = ?");
+        $stmt->execute([$user_id, $series_id]);
+        $in_watchlist = $stmt->fetch() !== false;
+    } catch (Exception $e) {
+        error_log("Error checking watchlist: " . $e->getMessage());
+        $in_watchlist = false;
+    }
 }
 
 // Get user's rating for this series
 $user_rating = null;
 $user_review = '';
 if ($user_id) {
-    $stmt = $pdo->prepare("SELECT rating, review FROM ratings WHERE user_id = ? AND series_id = ?");
-    $stmt->execute([$user_id, $series_id]);
-    $rating_data = $stmt->fetch();
-    if ($rating_data) {
-        $user_rating = $rating_data['rating'];
-        $user_review = $rating_data['review'];
+    try {
+        $stmt = $pdo->prepare("SELECT rating, review FROM ratings WHERE user_id = ? AND series_id = ?");
+        $stmt->execute([$user_id, $series_id]);
+        $rating_data = $stmt->fetch();
+        if ($rating_data) {
+            $user_rating = $rating_data['rating'];
+            $user_review = $rating_data['review'];
+        }
+    } catch (Exception $e) {
+        error_log("Error loading user rating: " . $e->getMessage());
+        $user_rating = null;
+        $user_review = '';
     }
 }
 ?>
@@ -176,7 +273,7 @@ if ($user_id) {
                                 <span class="info-item">⭐ <?php echo number_format($series['avg_rating'], 1); ?>/5 (<?php echo $series['rating_count']; ?> ratings)</span>
                             <?php endif; ?>
                             
-                            <?php if (userHasSubtitleAccess($user_status)): ?>
+                            <?php if ($user_id && userCanAccessSubtitles($user_status)): ?>
                                 <span class="info-item subtitle-indicator">🔤 Subtitles Available</span>
                             <?php endif; ?>
                         </div>
@@ -226,7 +323,7 @@ if ($user_id) {
                             <p><strong>Language:</strong> <?php echo htmlspecialchars($series['language']); ?></p>
                         <?php endif; ?>
                         
-                        <?php if (!userHasSubtitleAccess($user_status)): ?>
+                        <?php if (!$user_id || !userCanAccessSubtitles($user_status)): ?>
                             <div class="alert alert-info">
                                 <p>📝 Want to see subtitles? <a href="../login.php">Login</a> and ask admin to activate your account!</p>
                             </div>

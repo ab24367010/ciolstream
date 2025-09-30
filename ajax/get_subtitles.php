@@ -26,7 +26,7 @@ $stmt = $pdo->prepare("SELECT status FROM users WHERE id = ?");
 $stmt->execute([$user_id]);
 $user = $stmt->fetch();
 
-if (!$user || !userHasSubtitleAccess($user['status'])) {
+if (!$user || !userCanAccessSubtitles($user['status'])) {
     http_response_code(403);
     echo json_encode(['success' => false, 'error' => 'Access denied']);
     exit;

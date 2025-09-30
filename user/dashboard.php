@@ -30,6 +30,7 @@ $stmt = $pdo->prepare("
     SELECT v.*,
            up.last_watched,
            up.progress_seconds,
+           up.total_duration,
            up.completed,
            up.watch_count,
            COALESCE(AVG(r.rating), 0) AS avg_rating
@@ -37,7 +38,7 @@ $stmt = $pdo->prepare("
     JOIN videos v ON up.video_id = v.id
     LEFT JOIN ratings r ON v.id = r.video_id
     WHERE up.user_id = ? AND v.status = 'active'
-    GROUP BY v.id, up.last_watched, up.progress_seconds, up.completed, up.watch_count
+    GROUP BY v.id, up.last_watched, up.progress_seconds, up.total_duration, up.completed, up.watch_count
     ORDER BY up.last_watched DESC
     LIMIT 8
 ");
@@ -108,6 +109,7 @@ $recommendations = getVideoRecommendations($pdo, $user_id, null, 6);
                 </h1>
                 <div class="nav-links">
                     <a href="../public/index.php" class="btn">Browse Content</a>
+                    <a href="settings.php" class="btn">Settings</a>
                     <a href="../logout.php" class="btn">Logout</a>
                 </div>
             </div>
@@ -167,9 +169,11 @@ $recommendations = getVideoRecommendations($pdo, $user_id, null, 6);
                                      alt="<?php echo htmlspecialchars($video['title']); ?>"
                                      loading="lazy">
                                 <div class="progress-overlay">
-                                    <?php 
-                                    $progress = ($video['duration_seconds'] > 0) ? 
-                                        ($video['progress_seconds'] / $video['duration_seconds']) * 100 : 0;
+                                    <?php
+                                    // Use total_duration from progress tracking if available, fallback to video duration
+                                    $duration = $video['total_duration'] > 0 ? $video['total_duration'] : $video['duration_seconds'];
+                                    $progress = ($duration > 0) ?
+                                        ($video['progress_seconds'] / $duration) * 100 : 0;
                                     ?>
                                     <div class="progress-bar">
                                         <div class="progress-fill" style="width: <?php echo min(100, $progress); ?>%"></div>
@@ -395,6 +399,12 @@ $recommendations = getVideoRecommendations($pdo, $user_id, null, 6);
                         <h4>Search Content</h4>
                         <p style="color: #ccc; margin-bottom: 1rem;">Find specific movies or shows</p>
                         <a href="../public/index.php" class="btn">Search Now</a>
+                    </div>
+                    <div class="setting-card" style="background: linear-gradient(135deg, rgba(0,123,255,0.1) 0%, rgba(108,117,125,0.1) 100%); padding: 1.5rem; border-radius: 12px; text-align: center; border: 1px solid rgba(0,123,255,0.2);">
+                        <div class="setting-icon" style="font-size: 2rem; margin-bottom: 1rem;">⚙️</div>
+                        <h4>Account Settings</h4>
+                        <p style="color: #ccc; margin-bottom: 1rem;">Change username, email, or password</p>
+                        <a href="settings.php" class="btn" style="background: linear-gradient(135deg, #007bff 0%, #6c757d 100%); border: none;">Manage Account</a>
                     </div>
                     <?php if ($user['status'] === 'inactive'): ?>
                     <div class="setting-card" style="background: rgba(255, 193, 7, 0.1); padding: 1.5rem; border-radius: 12px; text-align: center; border: 1px solid #ffc107;">

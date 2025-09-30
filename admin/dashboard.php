@@ -12,6 +12,86 @@ if (!isset($_SESSION['admin_id'])) {
 $success_msg = '';
 $error_msg = '';
 
+// Handle series addition
+if (isset($_POST['add_series'])) {
+    $title = trim($_POST['title']);
+    $description = trim($_POST['description']);
+    $release_year = !empty($_POST['release_year']) ? (int)$_POST['release_year'] : null;
+    $thumbnail_url = trim($_POST['thumbnail_url']) ?: null;
+    $director = trim($_POST['director']) ?: null;
+    $cast = trim($_POST['cast']) ?: null;
+    $language = trim($_POST['language']) ?: 'English';
+    $tags = trim($_POST['tags']) ?: null;
+    $selected_genres = isset($_POST['genres']) ? $_POST['genres'] : [];
+
+    if (!empty($title)) {
+        try {
+            $stmt = $pdo->prepare("
+                INSERT INTO series (title, description, release_year, thumbnail_url, director, cast, language, tags)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ");
+
+            if ($stmt->execute([$title, $description, $release_year, $thumbnail_url, $director, $cast, $language, $tags])) {
+                $series_id = $pdo->lastInsertId();
+
+                // Insert genres for series
+                if (!empty($selected_genres)) {
+                    $stmt = $pdo->prepare("INSERT INTO series_genres (series_id, genre_id) VALUES (?, ?)");
+                    foreach ($selected_genres as $genre_id) {
+                        $stmt->execute([$series_id, (int)$genre_id]);
+                    }
+                }
+
+                $success_msg = "Series added successfully!";
+            } else {
+                $error_msg = "Failed to add series. Please try again.";
+            }
+        } catch (Exception $e) {
+            error_log("Error adding series: " . $e->getMessage());
+            $error_msg = "Failed to add series: " . $e->getMessage();
+        }
+    } else {
+        $error_msg = "Please fill in the required fields.";
+    }
+}
+
+// Handle season addition
+if (isset($_POST['add_season'])) {
+    $series_id = (int)$_POST['series_id'];
+    $season_number = (int)$_POST['season_number'];
+    $title = trim($_POST['title']) ?: "Season {$season_number}";
+    $description = trim($_POST['description']) ?: null;
+    $release_year = !empty($_POST['release_year']) ? (int)$_POST['release_year'] : null;
+    $thumbnail_url = trim($_POST['thumbnail_url']) ?: null;
+
+    if ($series_id && $season_number) {
+        try {
+            // Check if season already exists
+            $stmt = $pdo->prepare("SELECT id FROM seasons WHERE series_id = ? AND season_number = ?");
+            $stmt->execute([$series_id, $season_number]);
+            if ($stmt->fetch()) {
+                $error_msg = "Season {$season_number} already exists for this series.";
+            } else {
+                $stmt = $pdo->prepare("
+                    INSERT INTO seasons (series_id, season_number, title, description, release_year, thumbnail_url)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                ");
+
+                if ($stmt->execute([$series_id, $season_number, $title, $description, $release_year, $thumbnail_url])) {
+                    $success_msg = "Season added successfully!";
+                } else {
+                    $error_msg = "Failed to add season. Please try again.";
+                }
+            }
+        } catch (Exception $e) {
+            error_log("Error adding season: " . $e->getMessage());
+            $error_msg = "Failed to add season: " . $e->getMessage();
+        }
+    } else {
+        $error_msg = "Please fill in the required fields.";
+    }
+}
+
 // Handle user status change with expiry
 if (isset($_POST['change_status']) && isset($_POST['user_id'])) {
     $user_id = (int)$_POST['user_id'];
@@ -34,7 +114,6 @@ if (isset($_POST['change_status']) && isset($_POST['user_id'])) {
 if (isset($_POST['add_video'])) {
     $title = trim($_POST['title']);
     $content_type = $_POST['content_type'] ?? 'movie';
-    $genre = trim($_POST['genre']);
     $youtube_id = trim($_POST['youtube_id']);
     $description = trim($_POST['description']);
     $series_id = !empty($_POST['series_id']) ? (int)$_POST['series_id'] : null;
@@ -42,47 +121,81 @@ if (isset($_POST['add_video'])) {
     $episode_number = !empty($_POST['episode_number']) ? (int)$_POST['episode_number'] : null;
     $duration_seconds = !empty($_POST['duration_seconds']) ? (int)$_POST['duration_seconds'] : 0;
     $release_year = !empty($_POST['release_year']) ? (int)$_POST['release_year'] : null;
+    $director = trim($_POST['director']) ?: null;
+    $cast = trim($_POST['cast']) ?: null;
+    $language = trim($_POST['language']) ?: 'English';
     $tags = trim($_POST['tags']) ?: null;
+    $selected_genres = isset($_POST['genres']) ? $_POST['genres'] : [];
 
-    if (!empty($title) && !empty($genre) && !empty($youtube_id)) {
-        $thumbnail_url = getYouTubeThumbnail($youtube_id);
-
-        $stmt = $pdo->prepare("
-            INSERT INTO videos (title, content_type, genre, youtube_id, description, thumbnail_url, 
-                               series_id, season_id, episode_number, duration_seconds, release_year, tags) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ");
-
-        if ($stmt->execute([
-            $title,
-            $content_type,
-            $genre,
-            $youtube_id,
-            $description,
-            $thumbnail_url,
-            $series_id,
-            $season_id,
-            $episode_number,
-            $duration_seconds,
-            $release_year,
-            $tags
-        ])) {
-
-            $video_id = $pdo->lastInsertId();
-
-            // Insert into video_genres table
-            $stmt = $pdo->prepare("SELECT id FROM genres WHERE name = ?");
-            $stmt->execute([$genre]);
-            $genre_record = $stmt->fetch();
-
-            if ($genre_record) {
-                $stmt = $pdo->prepare("INSERT INTO video_genres (video_id, genre_id) VALUES (?, ?)");
-                $stmt->execute([$video_id, $genre_record['id']]);
-            }
-
-            $success_msg = "Video added successfully!";
+    if (!empty($title) && !empty($youtube_id)) {
+        // Validate episode requirements
+        if ($content_type === 'episode' && (!$series_id || !$season_id || !$episode_number)) {
+            $error_msg = "Episodes require series, season, and episode number.";
         } else {
-            $error_msg = "Failed to add video. Please try again.";
+            try {
+                $thumbnail_url = getYouTubeThumbnail($youtube_id);
+
+                // Get primary genre for legacy genre field (use first selected genre)
+                $primary_genre = '';
+                if (!empty($selected_genres)) {
+                    $stmt = $pdo->prepare("SELECT name FROM genres WHERE id = ?");
+                    $stmt->execute([(int)$selected_genres[0]]);
+                    $genre_row = $stmt->fetch();
+                    $primary_genre = $genre_row ? $genre_row['name'] : '';
+                }
+
+                $stmt = $pdo->prepare("
+                    INSERT INTO videos (title, content_type, genre, youtube_id, description, thumbnail_url,
+                                       series_id, season_id, episode_number, duration_seconds, release_year,
+                                       director, cast, language, tags)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ");
+
+                if ($stmt->execute([
+                    $title,
+                    $content_type,
+                    $primary_genre,
+                    $youtube_id,
+                    $description,
+                    $thumbnail_url,
+                    $series_id,
+                    $season_id,
+                    $episode_number,
+                    $duration_seconds,
+                    $release_year,
+                    $director,
+                    $cast,
+                    $language,
+                    $tags
+                ])) {
+                    $video_id = $pdo->lastInsertId();
+
+                    // Insert into video_genres table for all selected genres
+                    if (!empty($selected_genres)) {
+                        $stmt = $pdo->prepare("INSERT INTO video_genres (video_id, genre_id) VALUES (?, ?)");
+                        foreach ($selected_genres as $genre_id) {
+                            $stmt->execute([$video_id, (int)$genre_id]);
+                        }
+                    }
+
+                    // Update season episode count
+                    if ($season_id) {
+                        $stmt = $pdo->prepare("
+                            UPDATE seasons
+                            SET episode_count = (SELECT COUNT(*) FROM videos WHERE season_id = ? AND status = 'active')
+                            WHERE id = ?
+                        ");
+                        $stmt->execute([$season_id, $season_id]);
+                    }
+
+                    $success_msg = "Video added successfully!";
+                } else {
+                    $error_msg = "Failed to add video. Please try again.";
+                }
+            } catch (Exception $e) {
+                error_log("Error adding video: " . $e->getMessage());
+                $error_msg = "Failed to add video: " . $e->getMessage();
+            }
         }
     } else {
         $error_msg = "Please fill in all required fields.";
@@ -129,23 +242,44 @@ if (isset($_POST['upload_subtitle']) && isset($_FILES['srt_file'])) {
 if (isset($_POST['delete_video']) && isset($_POST['video_id'])) {
     $video_id = (int)$_POST['video_id'];
 
-    // Delete subtitle files
-    $stmt = $pdo->prepare("SELECT srt_file_path FROM subtitles WHERE video_id = ?");
-    $stmt->execute([$video_id]);
-    $subtitle_files = $stmt->fetchAll();
+    try {
+        // Get season_id before deleting
+        $stmt = $pdo->prepare("SELECT season_id FROM videos WHERE id = ?");
+        $stmt->execute([$video_id]);
+        $video_data = $stmt->fetch();
+        $season_id = $video_data ? $video_data['season_id'] : null;
 
-    foreach ($subtitle_files as $file) {
-        if (file_exists($file['srt_file_path'])) {
-            unlink($file['srt_file_path']);
+        // Delete subtitle files
+        $stmt = $pdo->prepare("SELECT srt_file_path FROM subtitles WHERE video_id = ?");
+        $stmt->execute([$video_id]);
+        $subtitle_files = $stmt->fetchAll();
+
+        foreach ($subtitle_files as $file) {
+            if (file_exists($file['srt_file_path'])) {
+                unlink($file['srt_file_path']);
+            }
         }
-    }
 
-    // Delete video record (cascades to subtitles)
-    $stmt = $pdo->prepare("DELETE FROM videos WHERE id = ?");
-    if ($stmt->execute([$video_id])) {
-        $success_msg = "Video deleted successfully!";
-    } else {
-        $error_msg = "Failed to delete video.";
+        // Delete video record (cascades to subtitles and related records)
+        $stmt = $pdo->prepare("DELETE FROM videos WHERE id = ?");
+        if ($stmt->execute([$video_id])) {
+            // Update season episode count if it was an episode
+            if ($season_id) {
+                $stmt = $pdo->prepare("
+                    UPDATE seasons
+                    SET episode_count = (SELECT COUNT(*) FROM videos WHERE season_id = ? AND status = 'active')
+                    WHERE id = ?
+                ");
+                $stmt->execute([$season_id, $season_id]);
+            }
+
+            $success_msg = "Video deleted successfully!";
+        } else {
+            $error_msg = "Failed to delete video.";
+        }
+    } catch (Exception $e) {
+        error_log("Error deleting video: " . $e->getMessage());
+        $error_msg = "Failed to delete video: " . $e->getMessage();
     }
 }
 
@@ -153,6 +287,36 @@ if (isset($_POST['delete_video']) && isset($_POST['video_id'])) {
 $stmt = $pdo->prepare("SELECT id, username, email, status, expiry_date, created_at FROM users ORDER BY created_at DESC");
 $stmt->execute();
 $users = $stmt->fetchAll();
+
+// Get all series with genre information
+$stmt = $pdo->prepare("
+    SELECT s.*,
+           GROUP_CONCAT(g.name SEPARATOR ', ') as genres,
+           COUNT(DISTINCT seasons.id) as season_count,
+           COUNT(DISTINCT videos.id) as episode_count
+    FROM series s
+    LEFT JOIN series_genres sg ON s.id = sg.series_id
+    LEFT JOIN genres g ON sg.genre_id = g.id
+    LEFT JOIN seasons ON s.id = seasons.series_id
+    LEFT JOIN videos ON seasons.id = videos.season_id AND videos.content_type = 'episode'
+    GROUP BY s.id
+    ORDER BY s.created_at DESC
+");
+$stmt->execute();
+$all_series = $stmt->fetchAll();
+
+// Get all seasons with series information
+$stmt = $pdo->prepare("
+    SELECT seasons.*, series.title as series_title,
+           COUNT(videos.id) as actual_episode_count
+    FROM seasons
+    LEFT JOIN series ON seasons.series_id = series.id
+    LEFT JOIN videos ON seasons.id = videos.season_id AND videos.content_type = 'episode' AND videos.status = 'active'
+    GROUP BY seasons.id
+    ORDER BY series.title, seasons.season_number
+");
+$stmt->execute();
+$all_seasons = $stmt->fetchAll();
 
 // Get all videos
 $stmt = $pdo->prepare("SELECT v.*, s.language, s.srt_file_path FROM videos v LEFT JOIN subtitles s ON v.id = s.video_id ORDER BY v.created_at DESC");
@@ -174,6 +338,11 @@ foreach ($videos as $video) {
         ];
     }
 }
+
+// Get all genres for forms
+$stmt = $pdo->prepare("SELECT id, name FROM genres WHERE is_active = TRUE ORDER BY name");
+$stmt->execute();
+$all_genres = $stmt->fetchAll();
 ?>
 
 <!DOCTYPE html>
@@ -195,6 +364,7 @@ foreach ($videos as $video) {
                 </h1>
                 <div class="nav-links">
                     <a href="../public/index.php" class="btn">View Site</a>
+                    <a href="settings.php" class="btn">Settings</a>
                     <a href="logout.php" class="btn">Logout</a>
                 </div>
             </div>
@@ -222,6 +392,8 @@ foreach ($videos as $video) {
 
             <div class="admin-nav">
                 <a href="#users" class="btn active" onclick="showSection('users')">User Management</a>
+                <a href="#series" class="btn" onclick="showSection('series')">Series Management</a>
+                <a href="#seasons" class="btn" onclick="showSection('seasons')">Seasons Management</a>
                 <a href="#videos" class="btn" onclick="showSection('videos')">Video Management</a>
                 <a href="#subtitles" class="btn" onclick="showSection('subtitles')">Subtitles Management</a>
             </div>
@@ -297,6 +469,172 @@ foreach ($videos as $video) {
                 </table>
             </div>
 
+            <!-- Series Management Section -->
+            <div id="series-section" class="admin-section" style="display: none;">
+                <h2>Series Management</h2>
+
+                <div class="add-video-form">
+                    <h3>Add New Series</h3>
+                    <form method="POST">
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label for="title">Title: *</label>
+                                <input type="text" name="title" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="genres">Genres:</label>
+                                <div style="max-height: 150px; overflow-y: auto; border: 1px solid #ccc; padding: 8px;">
+                                    <?php foreach ($all_genres as $g): ?>
+                                        <label style="display: block; margin: 4px 0;">
+                                            <input type="checkbox" name="genres[]" value="<?php echo $g['id']; ?>">
+                                            <?php echo htmlspecialchars($g['name']); ?>
+                                        </label>
+                                    <?php endforeach; ?>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label for="release_year">Release Year:</label>
+                                <input type="number" name="release_year" min="1900" max="2030" placeholder="2024">
+                            </div>
+                            <div class="form-group">
+                                <label for="director">Creator/Director:</label>
+                                <input type="text" name="director" placeholder="Series creator">
+                            </div>
+                            <div class="form-group">
+                                <label for="cast">Cast:</label>
+                                <input type="text" name="cast" placeholder="Main cast members">
+                            </div>
+                            <div class="form-group">
+                                <label for="language">Language:</label>
+                                <input type="text" name="language" value="English">
+                            </div>
+                            <div class="form-group">
+                                <label for="thumbnail_url">Thumbnail URL:</label>
+                                <input type="url" name="thumbnail_url" placeholder="https://...">
+                            </div>
+                            <div class="form-group">
+                                <label for="tags">Tags (comma-separated):</label>
+                                <input type="text" name="tags" placeholder="drama, thriller">
+                            </div>
+                            <div class="form-group" style="grid-column: 1 / -1;">
+                                <label for="description">Description:</label>
+                                <textarea name="description" rows="4"></textarea>
+                            </div>
+                        </div>
+                        <button type="submit" name="add_series" class="btn btn-primary">Add Series</button>
+                    </form>
+                </div>
+
+                <h3>All Series (<?php echo count($all_series); ?>)</h3>
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Title</th>
+                            <th>Genres</th>
+                            <th>Seasons</th>
+                            <th>Episodes</th>
+                            <th>Status</th>
+                            <th>Created</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($all_series as $series): ?>
+                            <tr>
+                                <td><?php echo $series['id']; ?></td>
+                                <td><?php echo htmlspecialchars($series['title']); ?></td>
+                                <td><?php echo htmlspecialchars($series['genres'] ?: 'None'); ?></td>
+                                <td><?php echo $series['season_count']; ?></td>
+                                <td><?php echo $series['episode_count']; ?></td>
+                                <td>
+                                    <span class="status status-<?php echo $series['status']; ?>">
+                                        <?php echo ucfirst($series['status']); ?>
+                                    </span>
+                                </td>
+                                <td><?php echo date('M d, Y', strtotime($series['created_at'])); ?></td>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Seasons Management Section -->
+            <div id="seasons-section" class="admin-section" style="display: none;">
+                <h2>Seasons Management</h2>
+
+                <div class="add-video-form">
+                    <h3>Add New Season</h3>
+                    <form method="POST">
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label for="series_id">Series: *</label>
+                                <select name="series_id" required>
+                                    <option value="">Select Series...</option>
+                                    <?php foreach ($all_series as $s): ?>
+                                        <option value="<?php echo $s['id']; ?>">
+                                            <?php echo htmlspecialchars($s['title']); ?>
+                                        </option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="season_number">Season Number: *</label>
+                                <input type="number" name="season_number" min="1" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="title">Title:</label>
+                                <input type="text" name="title" placeholder="Auto: Season X">
+                            </div>
+                            <div class="form-group">
+                                <label for="release_year">Release Year:</label>
+                                <input type="number" name="release_year" min="1900" max="2030" placeholder="2024">
+                            </div>
+                            <div class="form-group">
+                                <label for="thumbnail_url">Thumbnail URL:</label>
+                                <input type="url" name="thumbnail_url" placeholder="https://...">
+                            </div>
+                            <div class="form-group" style="grid-column: 1 / -1;">
+                                <label for="description">Description:</label>
+                                <textarea name="description" rows="3"></textarea>
+                            </div>
+                        </div>
+                        <button type="submit" name="add_season" class="btn btn-primary">Add Season</button>
+                    </form>
+                </div>
+
+                <h3>All Seasons (<?php echo count($all_seasons); ?>)</h3>
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Series</th>
+                            <th>Season #</th>
+                            <th>Title</th>
+                            <th>Episodes</th>
+                            <th>Status</th>
+                            <th>Created</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($all_seasons as $season): ?>
+                            <tr>
+                                <td><?php echo $season['id']; ?></td>
+                                <td><?php echo htmlspecialchars($season['series_title']); ?></td>
+                                <td><?php echo $season['season_number']; ?></td>
+                                <td><?php echo htmlspecialchars($season['title']); ?></td>
+                                <td><?php echo $season['actual_episode_count']; ?></td>
+                                <td>
+                                    <span class="status status-<?php echo $season['status']; ?>">
+                                        <?php echo ucfirst($season['status']); ?>
+                                    </span>
+                                </td>
+                                <td><?php echo date('M d, Y', strtotime($season['created_at'])); ?></td>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+
             <!-- Videos Management Section -->
             <div id="videos-section" class="admin-section" style="display: none;">
                 <h2>Video Management</h2>
@@ -306,44 +644,36 @@ foreach ($videos as $video) {
                     <form method="POST">
                         <div class="form-grid">
                             <div class="form-group">
-                                <label for="title">Title:</label>
+                                <label for="title">Title: *</label>
                                 <input type="text" name="title" required>
                             </div>
                             <div class="form-group">
-                                <label for="content_type">Content Type:</label>
+                                <label for="content_type">Content Type: *</label>
                                 <select name="content_type" id="content_type" onchange="toggleSeriesFields()">
                                     <option value="movie">Movie</option>
                                     <option value="episode">TV Episode</option>
                                 </select>
                             </div>
                             <div class="form-group">
-                                <label for="genre">Genre:</label>
-                                <select name="genre" required>
-                                    <option value="">Select Genre...</option>
-                                    <?php
-                                    $stmt = $pdo->prepare("SELECT name FROM genres WHERE is_active = TRUE ORDER BY name");
-                                    $stmt->execute();
-                                    $genres = $stmt->fetchAll();
-                                    foreach ($genres as $g): ?>
-                                        <option value="<?php echo htmlspecialchars($g['name']); ?>">
-                                            <?php echo htmlspecialchars($g['name']); ?>
-                                        </option>
-                                    <?php endforeach; ?>
-                                </select>
-                            </div>
-                            <div class="form-group">
-                                <label for="youtube_id">YouTube ID:</label>
+                                <label for="youtube_id">YouTube ID: *</label>
                                 <input type="text" name="youtube_id" required placeholder="dQw4w9WgXcQ">
                             </div>
+                            <div class="form-group">
+                                <label for="genres">Genres:</label>
+                                <div style="max-height: 120px; overflow-y: auto; border: 1px solid #ccc; padding: 8px;">
+                                    <?php foreach ($all_genres as $g): ?>
+                                        <label style="display: block; margin: 4px 0;">
+                                            <input type="checkbox" name="genres[]" value="<?php echo $g['id']; ?>">
+                                            <?php echo htmlspecialchars($g['name']); ?>
+                                        </label>
+                                    <?php endforeach; ?>
+                                </div>
+                            </div>
                             <div class="form-group series-fields" style="display: none;">
-                                <label for="series_id">Series:</label>
+                                <label for="series_id">Series: *</label>
                                 <select name="series_id" id="series_id" onchange="loadSeasons()">
                                     <option value="">Select Series...</option>
-                                    <?php
-                                    $stmt = $pdo->prepare("SELECT id, title FROM series WHERE status = 'active' ORDER BY title");
-                                    $stmt->execute();
-                                    $series = $stmt->fetchAll();
-                                    foreach ($series as $s): ?>
+                                    <?php foreach ($all_series as $s): ?>
                                         <option value="<?php echo $s['id']; ?>">
                                             <?php echo htmlspecialchars($s['title']); ?>
                                         </option>
@@ -351,13 +681,13 @@ foreach ($videos as $video) {
                                 </select>
                             </div>
                             <div class="form-group series-fields" style="display: none;">
-                                <label for="season_id">Season:</label>
+                                <label for="season_id">Season: *</label>
                                 <select name="season_id" id="season_id">
                                     <option value="">Select Season...</option>
                                 </select>
                             </div>
                             <div class="form-group series-fields" style="display: none;">
-                                <label for="episode_number">Episode Number:</label>
+                                <label for="episode_number">Episode Number: *</label>
                                 <input type="number" name="episode_number" min="1">
                             </div>
                             <div class="form-group">
@@ -369,10 +699,22 @@ foreach ($videos as $video) {
                                 <input type="number" name="release_year" min="1900" max="2030" placeholder="2024">
                             </div>
                             <div class="form-group">
-                                <label for="tags">Tags (comma-separated):</label>
-                                <input type="text" name="tags" placeholder="action, adventure, sci-fi">
+                                <label for="director">Director:</label>
+                                <input type="text" name="director" placeholder="Director name">
                             </div>
                             <div class="form-group">
+                                <label for="cast">Cast:</label>
+                                <input type="text" name="cast" placeholder="Main actors">
+                            </div>
+                            <div class="form-group">
+                                <label for="language">Language:</label>
+                                <input type="text" name="language" value="English">
+                            </div>
+                            <div class="form-group">
+                                <label for="tags">Tags (comma-separated):</label>
+                                <input type="text" name="tags" placeholder="action, adventure">
+                            </div>
+                            <div class="form-group" style="grid-column: 1 / -1;">
                                 <label for="description">Description:</label>
                                 <textarea name="description" rows="3"></textarea>
                             </div>
@@ -544,19 +886,24 @@ foreach ($videos as $video) {
     <script>
         function showSection(section) {
             // Hide all sections
-            document.getElementById('users-section').style.display = 'none';
-            document.getElementById('videos-section').style.display = 'none';
-            document.getElementById('subtitles-section').style.display = 'none';
+            const sections = ['users', 'series', 'seasons', 'videos', 'subtitles'];
+            sections.forEach(s => {
+                const element = document.getElementById(s + '-section');
+                if (element) element.style.display = 'none';
+            });
 
             // Remove active class from all nav buttons
             const navButtons = document.querySelectorAll('.admin-nav .btn');
             navButtons.forEach(btn => btn.classList.remove('active'));
 
             // Show selected section
-            document.getElementById(section + '-section').style.display = 'block';
+            const selectedSection = document.getElementById(section + '-section');
+            if (selectedSection) selectedSection.style.display = 'block';
 
             // Add active class to clicked button
-            event.target.classList.add('active');
+            if (event && event.target) {
+                event.target.classList.add('active');
+            }
         }
     </script>
 </body>

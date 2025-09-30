@@ -219,12 +219,12 @@ function getVideoWithUserData($pdo, $video_id, $user_id = null) {
                    COUNT(r.rating) as rating_count,
                    GROUP_CONCAT(DISTINCT g.name ORDER BY g.name SEPARATOR ', ') as genres,
                    GROUP_CONCAT(DISTINCT g.color_code ORDER BY g.name SEPARATOR ',') as genre_colors,
-                   s.title as series_title,
-                   se.season_number,
-                   se.title as season_title";
+                   MAX(s.title) as series_title,
+                   MAX(se.season_number) as season_number,
+                   MAX(se.title) as season_title";
         
-        $params = [$video_id];
-        
+        $params = [];
+
         if ($user_id) {
             $sql .= ",
                    MAX(up.progress_seconds) as progress_seconds,
@@ -250,7 +250,7 @@ function getVideoWithUserData($pdo, $video_id, $user_id = null) {
             LEFT JOIN user_progress up ON v.id = up.video_id AND up.user_id = ?
             LEFT JOIN ratings ur ON v.id = ur.video_id AND ur.user_id = ?
             LEFT JOIN watchlist w ON v.id = w.video_id AND w.user_id = ?";
-            $params = array_merge($params, [$user_id, $user_id, $user_id]);
+            $params = [$user_id, $user_id, $user_id];
         }
 
         $sql .= "
@@ -258,9 +258,10 @@ function getVideoWithUserData($pdo, $video_id, $user_id = null) {
             GROUP BY v.id, v.title, v.content_type, v.series_id, v.season_id, v.episode_number,
                      v.genre, v.youtube_id, v.description, v.thumbnail_url, v.duration_seconds,
                      v.release_year, v.imdb_rating, v.language, v.director, v.cast, v.tags,
-                     v.view_count, v.featured, v.status, v.created_at, v.updated_at,
-                     s.title, se.season_number, se.title";
-        
+                     v.view_count, v.featured, v.status, v.created_at, v.updated_at";
+
+        $params[] = $video_id; // Add video_id for WHERE clause
+
         $stmt = $pdo->prepare($sql);
         $stmt->execute($params);
         $video = $stmt->fetch();
@@ -796,6 +797,13 @@ function removeFromWatchlist($pdo, $user_id, $video_id = null, $series_id = null
  */
 function updateVideoProgress($pdo, $user_id, $video_id, $progress_seconds, $total_duration = 0, $completed = false) {
     try {
+        // Ensure proper data types
+        $user_id = (int)$user_id;
+        $video_id = (int)$video_id;
+        $progress_seconds = (int)$progress_seconds;
+        $total_duration = (int)$total_duration;
+        $completed = $completed ? 1 : 0; // Convert to integer (1 or 0)
+
         $stmt = $pdo->prepare("
             INSERT INTO user_progress (user_id, video_id, progress_seconds, total_duration, completed, last_watched)
             VALUES (?, ?, ?, ?, ?, NOW())
@@ -806,7 +814,7 @@ function updateVideoProgress($pdo, $user_id, $video_id, $progress_seconds, $tota
             last_watched = VALUES(last_watched),
             watch_count = watch_count + 1
         ");
-        
+
         $result = $stmt->execute([$user_id, $video_id, $progress_seconds, $total_duration, $completed]);
         
         if ($result) {
@@ -916,6 +924,13 @@ function logAdminAction($pdo, $admin_id, $action, $target_type = null, $target_i
         error_log("Error logging admin action: " . $e->getMessage());
         return false;
     }
+}
+
+/**
+ * Alias for logAdminAction (for backward compatibility)
+ */
+function logAdminActivity($pdo, $admin_id, $action, $target_type = null, $target_id = null, $details = '') {
+    return logAdminAction($pdo, $admin_id, $action, $target_type, $target_id, $details);
 }
 
 ?>

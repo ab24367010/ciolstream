@@ -1326,167 +1326,245 @@ footer a:hover {
         gap: 1rem;
         padding: 0 1rem;
     }
-    
+
     .logo {
         font-size: 1.6rem;
     }
-    
+
     .nav-links {
         flex-wrap: wrap;
         justify-content: center;
     }
-    
+
     .container {
         margin: 1rem auto;
         padding: 0 1rem;
     }
-    
+
     .search-controls {
         grid-template-columns: 1fr;
         gap: 0.8rem;
     }
-    
+
     .search-controls .btn {
         justify-self: stretch;
     }
-    
+
     .content-grid {
         grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
         gap: 1rem;
     }
-    
+
     .content-type-selector {
         flex-direction: column;
         gap: 0.5rem;
     }
-    
+
     .content-type-btn {
         padding: 0.6rem 1.5rem;
         font-size: 0.9rem;
     }
-    
+
     .video-section h1, .video-section h2 {
         font-size: 1.8rem;
     }
-    
+
     .video-info-row {
         flex-direction: column;
         align-items: center;
     }
-    
+
     .user-actions {
         flex-direction: column;
         gap: 0.8rem;
         align-items: stretch;
     }
-    
+
     .rating-container {
         justify-content: center;
     }
-    
+
     .video-wrapper {
         margin: 1rem;
         border-radius: 8px;
     }
-    
+
     #subtitles-overlay {
         font-size: 1rem;
         padding: 0.6rem 1rem;
         bottom: 8%;
     }
-    
+
     #fullscreen-subtitles {
         font-size: 1.1rem;
         padding: 0.8rem 1.5rem;
         bottom: 8%;
     }
-    
+
     .subtitle-controls {
         bottom: -50px;
         flex-direction: column;
         align-items: flex-end;
         gap: 0.3rem;
     }
-    
+
     .user-stats {
         grid-template-columns: repeat(2, 1fr);
         gap: 0.8rem;
     }
-    
+
     .stat-card {
         padding: 1rem;
     }
-    
+
     .stat-number {
         font-size: 1.5rem;
     }
-    
+
     .dashboard-header h1 {
         font-size: 1.8rem;
     }
-    
+
     .dashboard-section h2 {
         font-size: 1.4rem;
     }
-    
+
     .form-container {
         margin: 1rem;
         padding: 2rem 1.5rem;
     }
-    
+
     .admin-container {
         padding: 0 1rem;
     }
-    
+
     .admin-header {
         padding: 2rem 1rem;
     }
-    
+
     .admin-header h1 {
         font-size: 1.8rem;
     }
-    
+
     .admin-nav {
         flex-direction: column;
         align-items: center;
     }
-    
+
     .form-grid {
         grid-template-columns: 1fr;
     }
-    
+
     .data-table {
         font-size: 0.85rem;
         display: block;
         overflow-x: auto;
         white-space: nowrap;
     }
-    
+
     .data-table th,
     .data-table td {
         padding: 0.5rem;
     }
-    
+
     .seasons-list {
         justify-content: center;
     }
-    
+
     .episodes-grid {
         grid-template-columns: 1fr;
     }
-    
+
     .series-navigation {
         padding: 1.5rem;
     }
-    
+
     .breadcrumb-list {
         font-size: 0.85rem;
     }
-    
+
     .review-header {
         flex-direction: column;
         align-items: flex-start;
         gap: 0.3rem;
+    }
+
+    /* Settings Page Mobile Responsiveness */
+    .settings-container {
+        margin: 1rem auto;
+        padding: 1rem;
+    }
+
+    .settings-header {
+        padding: 1.5rem;
+        margin-bottom: 2rem;
+    }
+
+    .settings-header h2 {
+        font-size: 1.8rem;
+    }
+
+    .settings-header .user-info {
+        flex-direction: column;
+        gap: 0.5rem;
+        margin-bottom: 1rem;
+    }
+
+    .settings-section {
+        padding: 1.5rem;
+        margin-bottom: 1.5rem;
+    }
+
+    .settings-section h3 {
+        font-size: 1.4rem;
+        margin-bottom: 1rem;
+    }
+
+    .settings-tabs {
+        flex-direction: column;
+    }
+
+    .tab-button {
+        padding: 0.8rem 1rem;
+        font-size: 0.9rem;
+        text-align: center;
+    }
+
+    .admin-header {
+        padding: 1.5rem;
+    }
+
+    .admin-header h2 {
+        font-size: 1.8rem;
+    }
+
+    .admin-header .admin-info {
+        flex-direction: column;
+        gap: 0.5rem;
+        margin-bottom: 1rem;
+    }
+
+    .role-badge {
+        margin: 0;
+    }
+
+    .form-section {
+        margin-bottom: 1.5rem;
+    }
+
+    .form-section h4 {
+        font-size: 1.1rem;
+    }
+
+    .settings-section .form-group input {
+        padding: 0.7rem;
+        font-size: 0.95rem;
+    }
+
+    .settings-section .btn-submit,
+    .btn-admin {
+        padding: 0.7rem 1.5rem;
+        font-size: 0.95rem;
     }
 }
 
@@ -1494,81 +1572,171 @@ footer a:hover {
     .logo {
         font-size: 1.4rem;
     }
-    
+
     .content-grid {
         grid-template-columns: 1fr;
     }
-    
+
     .content-card {
         margin: 0 0.5rem;
     }
-    
+
     .content-thumbnail {
         height: 180px;
     }
-    
+
     .video-section h1, .video-section h2 {
         font-size: 1.5rem;
     }
-    
+
     .dashboard-header h1 {
         font-size: 1.6rem;
     }
-    
+
     .user-stats {
         grid-template-columns: 1fr 1fr;
     }
-    
+
     .form-container {
         margin: 0.5rem;
         padding: 1.5rem 1rem;
     }
-    
+
     .admin-header {
         padding: 1.5rem 0.5rem;
     }
-    
+
     .admin-section {
         padding: 1.5rem 1rem;
     }
-    
+
     .data-table th,
     .data-table td {
         padding: 0.3rem;
         font-size: 0.75rem;
     }
-    
+
     .search-section {
         padding: 1.5rem 1rem;
     }
-    
+
     .video-details,
     .reviews-section,
     .write-review-section {
         padding: 1.5rem 1rem;
     }
-    
+
     .genre-tags {
         gap: 0.3rem;
     }
-    
+
     .genre-tag {
         font-size: 0.8rem;
         padding: 0.2rem 0.6rem;
     }
-    
+
     .info-item {
         font-size: 0.8rem;
         padding: 0.2rem 0.4rem;
     }
-    
+
     .content-meta {
         gap: 0.5rem;
     }
-    
+
     .meta-item {
         font-size: 0.75rem;
         padding: 0.1rem 0.3rem;
+    }
+
+    /* Settings Page Extra Small Mobile */
+    .settings-container {
+        margin: 0.5rem auto;
+        padding: 0.5rem;
+    }
+
+    .settings-header {
+        padding: 1rem;
+        margin-bottom: 1.5rem;
+    }
+
+    .settings-header h2 {
+        font-size: 1.6rem;
+    }
+
+    .settings-section {
+        padding: 1rem;
+        margin-bottom: 1rem;
+    }
+
+    .settings-section h3 {
+        font-size: 1.2rem;
+        margin-bottom: 0.8rem;
+    }
+
+    .settings-tabs {
+        margin-bottom: 1rem;
+    }
+
+    .tab-button {
+        padding: 0.6rem 0.8rem;
+        font-size: 0.85rem;
+    }
+
+    .admin-header {
+        padding: 1rem;
+    }
+
+    .admin-header h2 {
+        font-size: 1.6rem;
+    }
+
+    .info-card {
+        padding: 1rem;
+        margin-bottom: 1rem;
+    }
+
+    .info-card h5 {
+        font-size: 1.1rem;
+    }
+
+    .form-section h4 {
+        font-size: 1rem;
+    }
+
+    .settings-section .form-group {
+        margin-bottom: 1rem;
+    }
+
+    .settings-section .form-group label {
+        font-size: 0.9rem;
+        margin-bottom: 0.3rem;
+    }
+
+    .settings-section .form-group input {
+        padding: 0.6rem;
+        font-size: 0.9rem;
+    }
+
+    .settings-section .form-group small {
+        font-size: 0.8rem;
+    }
+
+    .settings-section .btn-submit,
+    .btn-admin {
+        padding: 0.6rem 1rem;
+        font-size: 0.9rem;
+    }
+
+    .alert {
+        padding: 0.8rem;
+        margin-bottom: 1rem;
+        font-size: 0.9rem;
+    }
+
+    .security-note {
+        padding: 0.8rem;
+        font-size: 0.85rem;
     }
 }
 
@@ -1603,6 +1771,346 @@ footer a:hover {
         border: 1px solid #ddd !important;
         break-inside: avoid;
     }
+}
+
+/* Settings Page Styles - Matching Dashboard Design */
+.settings-container {
+    max-width: 1200px;
+    margin: 2rem auto;
+    padding: 0 1rem;
+}
+
+/* Settings Header - Match Dashboard Header */
+.settings-header {
+    text-align: center;
+    margin-bottom: 3rem;
+    padding: 2rem;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border-radius: 12px;
+}
+
+.settings-header h2 {
+    font-size: 2.2rem;
+    margin-bottom: 1rem;
+    color: #fff;
+}
+
+.settings-header .user-info {
+    margin-bottom: 2rem;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 1rem;
+}
+
+.settings-header .welcome {
+    color: #fff;
+    font-weight: 500;
+    white-space: nowrap;
+}
+
+.settings-header .expiry-info {
+    color: #ffd700;
+    font-weight: 500;
+}
+
+.settings-header .inactive-notice {
+    color: #ffcccb;
+    font-style: italic;
+}
+
+/* Settings Sections - Match Dashboard Sections */
+.settings-section {
+    background: rgba(255,255,255,0.05);
+    border-radius: 12px;
+    padding: 2rem;
+    margin-bottom: 2rem;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+    border: 1px solid rgba(255,255,255,0.1);
+    transition: all 0.3s ease;
+}
+
+.settings-section:hover {
+    background: rgba(255,255,255,0.08);
+    border-color: rgba(102, 126, 234, 0.3);
+}
+
+.settings-section h3 {
+    font-size: 1.6rem;
+    margin-bottom: 1.5rem;
+    color: #fff;
+    border-bottom: 2px solid #667eea;
+    padding-bottom: 0.5rem;
+    margin-top: 0;
+}
+
+/* Form Groups - Match Dashboard Form Styling */
+.settings-section .form-group {
+    margin-bottom: 1.5rem;
+}
+
+.settings-section .form-group label {
+    display: block;
+    margin-bottom: 0.5rem;
+    color: #ccc;
+    font-weight: 500;
+    font-size: 1rem;
+}
+
+.settings-section .form-group input {
+    width: 100%;
+    padding: 0.8rem;
+    border: none;
+    border-radius: 6px;
+    background: rgba(255,255,255,0.1);
+    color: #fff;
+    font-size: 1rem;
+    transition: all 0.3s ease;
+}
+
+.settings-section .form-group input:focus {
+    outline: none;
+    background: rgba(255,255,255,0.2);
+    box-shadow: 0 0 0 2px #667eea;
+}
+
+.settings-section .form-group input::placeholder {
+    color: #aaa;
+}
+
+.settings-section .form-group small {
+    display: block;
+    margin-top: 0.3rem;
+    color: #aaa;
+    font-size: 0.85rem;
+}
+
+/* Buttons - Match Dashboard Button Style */
+.settings-section .btn-submit {
+    width: 100%;
+    padding: 1rem;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    font-size: 1.1rem;
+    cursor: pointer;
+    transition: transform 0.2s ease;
+}
+
+.settings-section .btn-submit:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+}
+
+/* Info Cards - Match Dashboard Cards */
+.info-card {
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 12px;
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+    transition: all 0.3s ease;
+}
+
+.info-card:hover {
+    background: rgba(255,255,255,0.08);
+    border-color: rgba(102, 126, 234, 0.3);
+}
+
+.info-card h5 {
+    margin-top: 0;
+    color: #667eea;
+    font-size: 1.2rem;
+    margin-bottom: 1rem;
+}
+
+.info-card p {
+    margin-bottom: 0.5rem;
+    color: #ddd;
+    line-height: 1.5;
+}
+
+.info-card strong {
+    color: #fff;
+    font-weight: 600;
+}
+
+/* Status Badges - Match Dashboard Status */
+.status-badge {
+    display: inline-block;
+    padding: 0.25rem 0.6rem;
+    border-radius: 20px;
+    font-size: 0.75rem;
+    font-weight: bold;
+    white-space: nowrap;
+}
+
+.status-active {
+    background: #28a745;
+    color: white;
+}
+
+.status-inactive {
+    background: #dc3545;
+    color: white;
+}
+
+/* Admin Settings Specific Styles */
+.admin-container {
+    max-width: 1200px;
+    margin: 2rem auto;
+    padding: 0 1rem;
+}
+
+.admin-header {
+    text-align: center;
+    margin-bottom: 3rem;
+    padding: 2rem;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border-radius: 12px;
+}
+
+.admin-header h2 {
+    font-size: 2.2rem;
+    margin-bottom: 1rem;
+    color: #fff;
+    margin-top: 0;
+}
+
+.admin-header .admin-info {
+    margin-bottom: 2rem;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 1rem;
+    opacity: 0.9;
+}
+
+.role-badge {
+    display: inline-block;
+    padding: 0.25rem 0.75rem;
+    border-radius: 20px;
+    font-size: 0.8rem;
+    font-weight: bold;
+    text-transform: uppercase;
+    background: #28a745;
+    color: white;
+}
+
+/* Settings Tabs */
+.settings-tabs {
+    display: flex;
+    border-bottom: 2px solid rgba(255,255,255,0.1);
+    margin-bottom: 2rem;
+    background: rgba(255,255,255,0.05);
+    border-radius: 8px 8px 0 0;
+    overflow: hidden;
+}
+
+.tab-button {
+    background: none;
+    border: none;
+    padding: 1rem 2rem;
+    cursor: pointer;
+    font-size: 1rem;
+    color: #aaa;
+    border-bottom: 3px solid transparent;
+    transition: all 0.3s ease;
+    flex: 1;
+    min-width: 120px;
+}
+
+.tab-button:hover {
+    background: rgba(255,255,255,0.05);
+    color: #fff;
+}
+
+.tab-button.active {
+    color: #667eea;
+    border-bottom-color: #667eea;
+    background: rgba(102, 126, 234, 0.1);
+}
+
+.tab-content {
+    display: none;
+}
+
+.tab-content.active {
+    display: block;
+}
+
+/* Alert Styles - Match Dashboard Alerts */
+.alert {
+    padding: 1rem 1.5rem;
+    margin-bottom: 2rem;
+    border-radius: 8px;
+    border-left: 4px solid;
+}
+
+.alert-success {
+    background: rgba(40, 167, 69, 0.1);
+    border-left-color: #28a745;
+    color: #28a745;
+}
+
+.alert-error {
+    background: rgba(220, 53, 69, 0.1);
+    border-left-color: #dc3545;
+    color: #dc3545;
+}
+
+.alert strong {
+    font-weight: 700;
+}
+
+/* Security Notice */
+.security-note {
+    background: rgba(255, 193, 7, 0.1);
+    border: 1px solid rgba(255, 193, 7, 0.3);
+    border-radius: 8px;
+    padding: 1rem;
+    margin: 1rem 0;
+    color: #ffc107;
+    font-size: 0.95rem;
+    line-height: 1.5;
+}
+
+.security-note strong {
+    color: #fff;
+    font-weight: 600;
+}
+
+/* Admin Button Style */
+.btn-admin {
+    width: 100%;
+    padding: 1rem;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    font-size: 1.1rem;
+    cursor: pointer;
+    transition: transform 0.2s ease;
+}
+
+.btn-admin:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+}
+
+/* Form Section for Admin */
+.form-section {
+    margin-bottom: 2rem;
+}
+
+.form-section h4 {
+    color: #fff;
+    margin-bottom: 1rem;
+    font-size: 1.2rem;
+    font-weight: 600;
 }
 
 /* Dark Mode Toggle Support */
