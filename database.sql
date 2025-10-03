@@ -456,7 +456,7 @@ INSERT INTO
 VALUES
     (
         'admin',
-        'admin@moviestream.local',
+        'admin@ciolstream.local',
         '$2y$10$q.2aYNNtd3Z8L4gicejLwu5NO.zMnqYp4cED9lCPDlm1BNFZz3XXq',
         'super_admin'
     );
@@ -917,7 +917,7 @@ INSERT INTO
 VALUES
     (
         'testuser',
-        'test@moviestream.local',
+        'test@ciolstream.local',
         '$2y$10$j5QhuuDW3nyRovpRXAemPe70ILbOTwQ2.KWZsyEjaABfFsxBkqNKa',
         'active',
         DATE_ADD(CURDATE(), INTERVAL 1 MONTH),
@@ -926,7 +926,7 @@ VALUES
     ),
     (
         'demo',
-        'demo@moviestream.local',
+        'demo@ciolstream.local',
         '$2y$10$j5QhuuDW3nyRovpRXAemPe70ILbOTwQ2.KWZsyEjaABfFsxBkqNKa',
         'active',
         DATE_ADD(CURDATE(), INTERVAL 3 MONTH),
@@ -935,7 +935,7 @@ VALUES
     ),
     (
         'inactive_user',
-        'inactive@moviestream.local',
+        'inactive@ciolstream.local',
         '$2y$10$j5QhuuDW3nyRovpRXAemPe70ILbOTwQ2.KWZsyEjaABfFsxBkqNKa',
         'inactive',
         NULL,
@@ -1031,7 +1031,7 @@ INSERT INTO
 VALUES
     (
         'site_name',
-        'MovieStream v0.2.0',
+        'ciolstream v0.2.0',
         'string',
         'Main site name',
         TRUE
