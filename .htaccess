@@ -1,9 +1,10 @@
-# .htaccess - Moviestream v0.3.0 (Apache 2.4+ compatible)
+# .htaccess - CiolStream v1 (Apache 2.4+ compatible)
 RewriteEngine On
 
-# Redirect to HTTPS if not already
+# Redirect to HTTPS if not already (except localhost)
 RewriteCond %{HTTPS} off
 RewriteCond %{HTTP:X-Forwarded-Proto} !https
+RewriteCond %{HTTP_HOST} !^localhost [NC]
 RewriteRule ^(.*)$ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
 
 # Security headers

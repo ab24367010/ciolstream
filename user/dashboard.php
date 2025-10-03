@@ -45,18 +45,27 @@ $stmt = $pdo->prepare("
 $stmt->execute([$user_id]);
 $recently_watched = $stmt->fetchAll();
 
-// Get watchlist - FIXED QUERY
+// Get watchlist - FIXED QUERY to support both videos and series
 $stmt = $pdo->prepare("
-    SELECT v.*,
-           w.added_at,
-           w.priority,
-           w.notes,
-           COALESCE(AVG(r.rating), 0) AS avg_rating
+    SELECT
+        COALESCE(v.id, s.id) AS id,
+        COALESCE(v.title, s.title) AS title,
+        COALESCE(v.thumbnail_url, s.thumbnail_url) AS thumbnail_url,
+        COALESCE(v.status, s.status) AS status,
+        w.added_at,
+        w.priority,
+        w.notes,
+        w.video_id,
+        w.series_id,
+        CASE WHEN w.video_id IS NOT NULL THEN 'video' ELSE 'series' END AS content_type,
+        COALESCE(AVG(r.rating), 0) AS avg_rating
     FROM watchlist w
-    JOIN videos v ON w.video_id = v.id
+    LEFT JOIN videos v ON w.video_id = v.id
+    LEFT JOIN series s ON w.series_id = s.id
     LEFT JOIN ratings r ON v.id = r.video_id
-    WHERE w.user_id = ? AND v.status = 'active'
-    GROUP BY v.id, w.added_at, w.priority, w.notes
+    WHERE w.user_id = ? AND (v.status = 'active' OR s.status = 'active')
+    GROUP BY COALESCE(v.id, s.id), COALESCE(v.title, s.title), COALESCE(v.thumbnail_url, s.thumbnail_url),
+             COALESCE(v.status, s.status), w.added_at, w.priority, w.notes, w.video_id, w.series_id
     ORDER BY w.priority DESC, w.added_at DESC
 ");
 $stmt->execute([$user_id]);
@@ -97,16 +106,19 @@ $recommendations = getVideoRecommendations($pdo, $user_id, null, 6);
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>My Dashboard - MovieStream v0.2.0</title>
+    <title>My Dashboard - CiolStream</title>
+    <link rel="icon" type="image/x-icon" href="../img/favicon.ico">
     <link rel="stylesheet" href="../assets/css/style.css">
 </head>
 <body>
     <header>
         <nav class="navbar">
             <div class="nav-container">
-                <h1 class="logo">
-                    <a href="../public/index.php" style="color: white; text-decoration: none;">MovieStream v0.2.0</a>
-                </h1>
+                <div class="logo">
+                    <a href="../public/index.php">
+                        <img src="../img/logo.png" alt="CiolStream" style="height: 50px; width: auto;">
+                    </a>
+                </div>
                 <div class="nav-links">
                     <a href="../public/index.php" class="btn">Browse Content</a>
                     <a href="settings.php" class="btn">Settings</a>
@@ -217,46 +229,57 @@ $recommendations = getVideoRecommendations($pdo, $user_id, null, 6);
             <section class="dashboard-section">
                 <h2>My Watchlist</h2>
                 <div class="content-grid">
-                    <?php foreach ($watchlist as $video): ?>
-                        <div class="content-card" onclick="window.location.href='../public/watch.php?id=<?php echo $video['id']; ?>'">
+                    <?php foreach ($watchlist as $item): ?>
+                        <?php
+                        // Determine the URL based on content type
+                        $url = ($item['content_type'] === 'video')
+                            ? '../public/watch.php?id=' . $item['id']
+                            : '../public/series.php?id=' . $item['id'];
+                        ?>
+                        <div class="content-card" onclick="window.location.href='<?php echo $url; ?>'">
                             <div class="content-thumbnail">
-                                <img src="<?php echo $video['thumbnail_url']; ?>" 
-                                     alt="<?php echo htmlspecialchars($video['title']); ?>"
+                                <img src="<?php echo $item['thumbnail_url']; ?>"
+                                     alt="<?php echo htmlspecialchars($item['title']); ?>"
                                      loading="lazy">
                                 <div class="play-overlay">
                                     <div class="play-button">▶</div>
                                 </div>
-                                <button class="remove-watchlist" 
-                                        data-video-id="<?php echo $video['id']; ?>" 
+                                <button class="remove-watchlist"
+                                        data-video-id="<?php echo $item['video_id']; ?>"
+                                        data-series-id="<?php echo $item['series_id']; ?>"
                                         title="Remove from watchlist"
                                         onclick="event.stopPropagation()"
                                         style="position: absolute; top: 10px; right: 10px; background: rgba(220, 53, 69, 0.8); border: none; border-radius: 50%; width: 30px; height: 30px; color: white; cursor: pointer; font-size: 0.8rem;">
                                     ❌
                                 </button>
-                                <div class="priority-indicator priority-<?php echo $video['priority']; ?>"
+                                <div class="priority-indicator priority-<?php echo $item['priority']; ?>"
                                      style="position: absolute; bottom: 10px; left: 10px; background: rgba(0,0,0,0.7); padding: 0.2rem 0.5rem; border-radius: 12px; font-size: 0.7rem; color: #ffd700;">
-                                    <?php echo str_repeat('★', $video['priority']); ?>
+                                    <?php echo str_repeat('★', $item['priority']); ?>
+                                </div>
+                                <div class="content-type-badge"
+                                     style="position: absolute; top: 10px; left: 10px; background: rgba(0,123,255,0.8); padding: 0.2rem 0.5rem; border-radius: 8px; font-size: 0.7rem; color: white;">
+                                    <?php echo $item['content_type'] === 'video' ? '🎬' : '📺'; ?>
                                 </div>
                             </div>
                             <div class="content-info">
-                                <h4><?php echo htmlspecialchars($video['title']); ?></h4>
+                                <h4><?php echo htmlspecialchars($item['title']); ?></h4>
                                 <div class="content-meta">
                                     <span class="meta-item">
-                                        Added: <?php echo date('M d', strtotime($video['added_at'])); ?>
+                                        Added: <?php echo date('M d', strtotime($item['added_at'])); ?>
                                     </span>
-                                    <?php if ($video['avg_rating'] > 0): ?>
-                                        <span class="meta-item">⭐ <?php echo number_format($video['avg_rating'], 1); ?></span>
+                                    <?php if ($item['avg_rating'] > 0): ?>
+                                        <span class="meta-item">⭐ <?php echo number_format($item['avg_rating'], 1); ?></span>
                                     <?php endif; ?>
                                 </div>
-                                <?php if ($video['notes']): ?>
+                                <?php if ($item['notes']): ?>
                                     <p class="description" style="font-size: 0.9rem; color: #ccc; margin-bottom: 1rem;">
-                                        <?php echo htmlspecialchars($video['notes']); ?>
+                                        <?php echo htmlspecialchars($item['notes']); ?>
                                     </p>
                                 <?php endif; ?>
                                 <div class="content-actions">
-                                    <a href="../public/watch.php?id=<?php echo $video['id']; ?>" 
+                                    <a href="<?php echo $url; ?>"
                                        class="btn btn-primary"
-                                       onclick="event.stopPropagation()">Watch Now</a>
+                                       onclick="event.stopPropagation()"><?php echo $item['content_type'] === 'video' ? 'Watch Now' : 'View Series'; ?></a>
                                 </div>
                             </div>
                         </div>
@@ -354,7 +377,7 @@ $recommendations = getVideoRecommendations($pdo, $user_id, null, 6);
                                 <div class="activity-description" style="font-weight: 500;">
                                     <?php
                                     $descriptions = [
-                                        'login' => 'Signed in to MovieStream',
+                                        'login' => 'Signed in',
                                         'video_play' => 'Started watching',
                                         'video_complete' => 'Finished watching',
                                         'rating' => 'Rated',
@@ -426,14 +449,23 @@ $recommendations = getVideoRecommendations($pdo, $user_id, null, 6);
                 e.preventDefault();
                 e.stopPropagation();
                 const videoId = this.dataset.videoId;
-                
-                if (confirm('Remove this movie from your watchlist?')) {
+                const seriesId = this.dataset.seriesId;
+
+                if (confirm('Remove this item from your watchlist?')) {
+                    const payload = {};
+                    if (videoId && videoId !== 'null') {
+                        payload.video_id = parseInt(videoId);
+                    }
+                    if (seriesId && seriesId !== 'null') {
+                        payload.series_id = parseInt(seriesId);
+                    }
+
                     fetch('ajax/remove_watchlist.php', {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json',
                         },
-                        body: JSON.stringify({ video_id: parseInt(videoId) })
+                        body: JSON.stringify(payload)
                     })
                     .then(response => response.json())
                     .then(data => {

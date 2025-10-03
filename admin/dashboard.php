@@ -351,7 +351,8 @@ $all_genres = $stmt->fetchAll();
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Admin Dashboard - MovieStream v0.2.0</title>
+    <title>Admin Dashboard - CiolStream</title>
+    <link rel="icon" type="image/x-icon" href="../img/favicon.ico">
     <link rel="stylesheet" href="../assets/css/style.css">
 </head>
 
@@ -359,11 +360,14 @@ $all_genres = $stmt->fetchAll();
     <header>
         <nav class="navbar">
             <div class="nav-container">
-                <h1 class="logo">
-                    <a href="../public/index.php" style="color: white; text-decoration: none;">MovieStream Admin v0.2.0</a>
-                </h1>
+                <div class="logo">
+                    <a href="../public/index.php">
+                        <img src="../img/logo.png" alt="CiolStream" style="height: 50px; width: auto;">
+                    </a>
+                </div>
                 <div class="nav-links">
                     <a href="../public/index.php" class="btn">View Site</a>
+                    <a href="../setup.php" class="btn">Setup</a>
                     <a href="settings.php" class="btn">Settings</a>
                     <a href="logout.php" class="btn">Logout</a>
                 </div>

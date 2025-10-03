@@ -742,22 +742,39 @@ function getFeaturedContent($pdo, $limit = 6) {
 
 /**
  * Add to watchlist
+ * Note: Uses application-level duplicate checking instead of UNIQUE constraint
+ * because MySQL UNIQUE constraints don't handle NULL values properly
+ * (NULL != NULL in UNIQUE constraints, allowing duplicate NULLs)
  */
 function addToWatchlist($pdo, $user_id, $video_id = null, $series_id = null, $priority = 1, $notes = '') {
     try {
         if (!$video_id && !$series_id) {
             return false;
         }
-        
-        $stmt = $pdo->prepare("
-            INSERT INTO watchlist (user_id, video_id, series_id, priority, notes) 
-            VALUES (?, ?, ?, ?, ?)
-            ON DUPLICATE KEY UPDATE 
-            priority = VALUES(priority), 
-            notes = VALUES(notes),
-            added_at = CURRENT_TIMESTAMP
+
+        // Check if item already exists in watchlist using NULL-safe comparison (<=>)
+        $checkStmt = $pdo->prepare("
+            SELECT id FROM watchlist
+            WHERE user_id = ? AND video_id <=> ? AND series_id <=> ?
         ");
-        return $stmt->execute([$user_id, $video_id, $series_id, $priority, $notes]);
+        $checkStmt->execute([$user_id, $video_id, $series_id]);
+
+        if ($checkStmt->fetch()) {
+            // Item already in watchlist, update it
+            $stmt = $pdo->prepare("
+                UPDATE watchlist
+                SET priority = ?, notes = ?, added_at = CURRENT_TIMESTAMP
+                WHERE user_id = ? AND video_id <=> ? AND series_id <=> ?
+            ");
+            return $stmt->execute([$priority, $notes, $user_id, $video_id, $series_id]);
+        } else {
+            // Insert new item
+            $stmt = $pdo->prepare("
+                INSERT INTO watchlist (user_id, video_id, series_id, priority, notes)
+                VALUES (?, ?, ?, ?, ?)
+            ");
+            return $stmt->execute([$user_id, $video_id, $series_id, $priority, $notes]);
+        }
     } catch (PDOException $e) {
         error_log("Error adding to watchlist: " . $e->getMessage());
         return false;

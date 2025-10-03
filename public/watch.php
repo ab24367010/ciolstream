@@ -2,7 +2,7 @@
 // Start session first
 session_start();
 
-// public/watch.php - Fixed Video player page v0.2.0 with proper access control
+// public/watch.php - Fixed Video player page v1 with proper access control
 require_once '../config/database.php';
 require_once '../includes/functions.php';
 
@@ -154,7 +154,8 @@ if ($is_episode && $video['series_id']) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?php echo htmlspecialchars($video['title']); ?> - MovieStream v0.2.0</title>
+    <title><?php echo htmlspecialchars($video['title']); ?> - CiolStream</title>
+    <link rel="icon" type="image/x-icon" href="../img/favicon.ico">
     <link rel="stylesheet" href="../assets/css/style.css">
     <meta name="description" content="<?php echo htmlspecialchars(substr($video['description'], 0, 160)); ?>">
     <meta property="og:title" content="<?php echo htmlspecialchars($video['title']); ?>">
@@ -166,9 +167,11 @@ if ($is_episode && $video['series_id']) {
     <header>
         <nav class="navbar">
             <div class="nav-container">
-                <h1 class="logo">
-                    <a href="index.php" style="color: white; text-decoration: none;">MovieStream v0.2.0</a>
-                </h1>
+                <div class="logo">
+                    <a href="index.php">
+                        <img src="../img/logo.png" alt="CiolStream" style="height: 50px; width: auto;">
+                    </a>
+                </div>
                 <div class="nav-links">
                     <?php if ($username): ?>
                         <span class="welcome">Welcome, <?php echo htmlspecialchars($username); ?></span>

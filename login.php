@@ -49,6 +49,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $expires_at
                 ]);
                 
+                // Regenerate session ID to prevent session fixation attacks
+                session_regenerate_id(true);
+
                 // Set session variables
                 $_SESSION['user_id'] = $user['id'];
                 $_SESSION['session_token'] = $session_token;
@@ -82,16 +85,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Login - MovieStream v0.2.0</title>
+    <title>Login - CiolStream</title>
+    <link rel="icon" type="image/x-icon" href="img/favicon.ico">
     <link rel="stylesheet" href="assets/css/style.css">
 </head>
 <body>
     <header>
         <nav class="navbar">
             <div class="nav-container">
-                <h1 class="logo">
-                    <a href="public/index.php" style="color: white; text-decoration: none;">MovieStream v0.2.0</a>
-                </h1>
+                <div class="logo">
+                    <a href="public/index.php">
+                        <img src="img/logo.png" alt="CiolStream" style="height: 50px; width: auto;">
+                    </a>
+                </div>
                 <div class="nav-links">
                     <a href="register.php" class="btn">Register</a>
                     <a href="public/index.php" class="btn">Browse Movies</a>
@@ -128,7 +134,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <div class="form-footer">
                 <p>Don't have an account? <a href="register.php">Register here</a></p>
                 <p><a href="admin/login.php">Admin Login</a></p>
-                <p>Test User: <strong>testuser</strong> / <strong>testpass</strong></p>
             </div>
         </div>
     </main>

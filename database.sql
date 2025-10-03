@@ -1,4 +1,4 @@
--- MovieStream Database Schema v0.2.0 - Complete and Updated
+-- CiolStream v1 - Your Movie World - Database Schema
 -- Drop and recreate database for clean installation
 DROP DATABASE IF EXISTS movie_streaming;
 

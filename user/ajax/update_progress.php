@@ -42,10 +42,18 @@ if (!$video_id || $progress_seconds < 0) {
 
 $user_id = $_SESSION['user_id'];
 
-// Update view count
+// Update view count only on first progress update (when no prior progress exists)
+// This prevents inflating view counts on every progress update
 try {
-    $stmt = $pdo->prepare("UPDATE videos SET view_count = view_count + 1 WHERE id = ?");
-    $stmt->execute([$video_id]);
+    $stmt = $pdo->prepare("SELECT id FROM user_progress WHERE user_id = ? AND video_id = ?");
+    $stmt->execute([$user_id, $video_id]);
+    $existing_progress = $stmt->fetch();
+
+    // Only increment view count if this is a new viewing session
+    if (!$existing_progress) {
+        $stmt = $pdo->prepare("UPDATE videos SET view_count = view_count + 1 WHERE id = ?");
+        $stmt->execute([$video_id]);
+    }
 } catch (PDOException $e) {
     error_log("Error updating view count: " . $e->getMessage());
 }

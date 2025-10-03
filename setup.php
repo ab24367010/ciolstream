@@ -1,5 +1,5 @@
 <?php
-// setup.php - MovieStream v0.2.0 Setup Script - FIXED
+// setup.php - CiolStream Setup Script - FIXED
 error_reporting(E_ALL);
 ini_set('display_errors', 1);
 
@@ -178,7 +178,8 @@ function return_bytes($val)
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MovieStream v0.2.0 Setup</title>
+    <title>CiolStream Setup</title>
+    <link rel="icon" type="image/x-icon" href="img/favicon.ico">
     <style>
         * {
             margin: 0;
@@ -411,7 +412,7 @@ function return_bytes($val)
 <body>
     <div class="container">
         <div class="header">
-            <h1>MovieStream v0.2.0</h1>
+            <img src="img/logo.png" alt="CiolStream" style="max-width: 200px; margin-bottom: 1rem;">
             <p>System Setup & Configuration Check</p>
             <p><small>Now with Multi-Season/Episode Support!</small></p>
         </div>
@@ -451,7 +452,7 @@ function return_bytes($val)
         <?php if (empty($errors) && empty($recommendations)): ?>
             <div class="summary success">
                 <h2>🎉 Setup Complete!</h2>
-                <p>All checks passed successfully. MovieStream v0.2.0 is ready to use!</p>
+                <p>All checks passed successfully. CiolStream is ready to use!</p>
             </div>
         <?php elseif (!empty($errors)): ?>
             <div class="summary error">
@@ -461,7 +462,7 @@ function return_bytes($val)
         <?php else: ?>
             <div class="summary warning">
                 <h2>⚡ Setup Complete with Recommendations</h2>
-                <p>MovieStream is functional, but consider the recommendations below for optimal performance.</p>
+                <p>CiolStream is functional, but consider the recommendations below for optimal performance.</p>
             </div>
         <?php endif; ?>
 
@@ -502,7 +503,7 @@ function return_bytes($val)
 
         <div class="action-buttons">
             <?php if (empty($errors)): ?>
-                <a href="public/index.php" class="btn btn-primary">Launch MovieStream</a>
+                <a href="public/index.php" class="btn btn-primary">Launch CiolStream</a>
                 <a href="admin/login.php" class="btn btn-secondary">Admin Panel</a>
             <?php else: ?>
                 <button onclick="location.reload()" class="btn btn-primary">Recheck Setup</button>

@@ -1,4 +1,4 @@
-● # MovieStream v0.2.0 - Complete Streaming Platform
+● # CiolStream v1 - Your Movie World
 
   A feature-rich movie and TV series streaming platform with advanced
   subtitle management, user engagement features, and comprehensive admin
@@ -6,7 +6,7 @@
 
   ## 📋 Project Overview
 
-  MovieStream is a professional-grade streaming platform that allows users
+  CiolStream is a professional-grade streaming platform that allows users
   to browse, watch, and manage their favorite movies and TV series with
   multi-language subtitle support. The platform features user
   authentication, progress tracking, ratings & reviews, watchlist
@@ -48,7 +48,7 @@
 
   ## 📁 Project Structure
 
-  moviestream/
+  ciolstream/
   ├── config/
   │   └── database.php           # Database configuration
   ├── includes/
@@ -106,18 +106,18 @@
 
   ```bash
   cd /var/www/html/
-  git clone <repository-url> moviestream
-  cd moviestream
+  git clone <repository-url> ciolstream
+  cd ciolstream
 
   Or extract the ZIP file to your web server's document root.
 
   Step 2: Set Permissions
 
   # Set ownership
-  sudo chown -R www-data:www-data /var/www/html/moviestream
+  sudo chown -R www-data:www-data /var/www/html/ciolstream
 
   # Set directory permissions
-  sudo chmod 755 /var/www/html/moviestream
+  sudo chmod 755 /var/www/html/ciolstream
   sudo chmod -R 777 uploads/
   sudo chmod -R 777 uploads/subtitles/
   sudo chmod -R 777 uploads/thumbnails/
@@ -126,18 +126,18 @@
 
   mysql -u root -p
 
-  CREATE DATABASE movie_streaming CHARACTER SET utf8mb4 COLLATE
+  CREATE DATABASE ciolstream CHARACTER SET utf8mb4 COLLATE
   utf8mb4_unicode_ci;
-  CREATE USER 'moviestream_user'@'localhost' IDENTIFIED BY
+  CREATE USER 'ciolstream_user'@'localhost' IDENTIFIED BY
   'your_secure_password';
-  GRANT ALL PRIVILEGES ON movie_streaming.* TO
-  'moviestream_user'@'localhost';
+  GRANT ALL PRIVILEGES ON ciolstream.* TO
+  'ciolstream_user'@'localhost';
   FLUSH PRIVILEGES;
   EXIT;
 
   Step 4: Import Database Schema
 
-  mysql -u moviestream_user -p movie_streaming < database.sql
+  mysql -u ciolstream_user -p ciolstream < database.sql
 
   The database includes:
   - 19 tables (users, videos, series, seasons, subtitles, etc.)
@@ -150,8 +150,8 @@
   Edit config/database.php:
 
   $host = 'localhost';
-  $dbname = 'movie_streaming';
-  $username = 'moviestream_user';     // Your database username
+  $dbname = 'ciolstream';
+  $username = 'ciolstream_user';     // Your database username
   $password = 'your_secure_password'; // Your database password
 
   Step 6: Web Server Configuration
@@ -178,7 +178,7 @@
 
   Step 7: Verify Installation
 
-  Visit: http://localhost/moviestream/setup.php
+  Visit: http://localhost/ciolstream/setup.php
 
   The setup checker will verify:
   - ✅ PHP version and required extensions
@@ -191,13 +191,13 @@
   Default Accounts
 
   Admin Access:
-  - URL: http://localhost/moviestream/admin/login.php
+  - URL: http://localhost/ciolstream/admin/login.php
   - Username: admin
   - Password: admin123
   - ⚠️ Change this password immediately after first login!
 
   Create User Account:
-  - Register at: http://localhost/moviestream/register.php
+  - Register at: http://localhost/ciolstream/register.php
   - New users are inactive by default
   - Admin must activate users from admin dashboard
 
@@ -388,7 +388,7 @@
   sudo systemctl status mysql
 
   # Test connection
-  mysql -u moviestream_user -p movie_streaming
+  mysql -u ciolstream_user -p ciolstream
 
   # Check credentials in config/database.php
 
@@ -407,13 +407,13 @@
 
   Upload Directory Not Writable
 
-  sudo chown -R www-data:www-data /var/www/html/moviestream/uploads
-  sudo chmod -R 777 /var/www/html/moviestream/uploads
+  sudo chown -R www-data:www-data /var/www/html/ciolstream/uploads
+  sudo chmod -R 777 /var/www/html/ciolstream/uploads
 
   Admin Cannot Login
 
   # Reset admin password
-  mysql -u root -p movie_streaming
+  mysql -u root -p ciolstream
   UPDATE admins SET password =
   '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi' WHERE
   username = 'admin';
@@ -494,7 +494,7 @@
 
   👥 Credits
 
-  MovieStream v0.2.0 - A complete streaming platform solution
+  CiolStream v1 - A complete streaming platform solution
 
   Built with ❤️ for educational and personal use.
 

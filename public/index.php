@@ -42,15 +42,20 @@ $genres = getGenres($pdo);
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MovieStream v0.2.0 - Watch Movies & Series Online</title>
+    <title>CiolStream - Your Movie World</title>
+    <link rel="icon" type="image/x-icon" href="../img/favicon.ico">
     <link rel="stylesheet" href="../assets/css/style.css">
-    <meta name="description" content="Stream movies and TV series online with MovieStream. Watch your favorite content with subtitles and track your progress.">
+    <meta name="description" content="Stream movies and TV series online with CiolStream. Your Movie World - Watch your favorite content with subtitles and track your progress.">
 </head>
 <body>
     <header>
         <nav class="navbar">
             <div class="nav-container">
-                <h1 class="logo">MovieStream v0.2.0</h1>
+                <div class="logo">
+                    <a href="index.php">
+                        <img src="../img/logo.png" alt="CiolStream" style="height: 50px; width: auto;">
+                    </a>
+                </div>
                 <div class="nav-links">
                     <?php if ($username): ?>
                         <span class="welcome">Welcome, <?php echo htmlspecialchars($username); ?></span>
@@ -75,7 +80,7 @@ $genres = getGenres($pdo);
         <div class="container">
             <?php if (!$username): ?>
                 <div class="alert alert-info">
-                    <h3>🎬 Welcome to MovieStream v0.2.0!</h3>
+                    <h3>🎬 Welcome to CiolStream!</h3>
                     <p>Discover amazing movies and TV series! <a href="../login.php">Login</a> or <a href="../register.php">register</a> to unlock subtitles, track your progress, and create watchlists.</p>
                 </div>
             <?php endif; ?>
@@ -339,7 +344,7 @@ $genres = getGenres($pdo);
 
     <footer>
         <div class="container">
-            <p>&copy; 2025 MovieStream v0.2.0. All rights reserved. | <a href="../admin/login.php">Admin</a></p>
+            <p>&copy; 2025 CiolStream. All rights reserved. | <a href="../admin/login.php">Admin</a></p>
             <p>Now with Multi-Season/Episode Support!</p>
         </div>
     </footer>

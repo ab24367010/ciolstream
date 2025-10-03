@@ -1,5 +1,5 @@
 <?php
-// config/database.php - Fixed Database configuration v0.2.0
+// config/database.php - Fixed Database configuration v1
 if (session_status() == PHP_SESSION_NONE) {
     session_start();
 }

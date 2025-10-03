@@ -155,21 +155,24 @@ $user_details = $stmt->fetch();
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Settings - MovieStream v0.2.0</title>
+    <title>Settings - CiolStream</title>
+    <link rel="icon" type="image/x-icon" href="../img/favicon.ico">
     <link rel="stylesheet" href="../assets/css/style.css">
 </head>
 <body>
     <header>
         <nav class="navbar">
             <div class="nav-container">
-                <h1 class="logo">
-                    <a href="../public/index.php" style="color: white; text-decoration: none;">MovieStream v0.2.0</a>
-                </h1>
+                <div class="logo">
+                    <a href="../public/index.php">
+                        <img src="../img/logo.png" alt="CiolStream" style="height: 50px; width: auto;">
+                    </a>
+                </div>
                 <div class="nav-links">
                     <span class="welcome">Welcome, <?php echo htmlspecialchars($username); ?></span>
-                    <a href="dashboard.php" class="btn-secondary">Dashboard</a>
-                    <a href="../public/index.php" class="btn-secondary">Browse</a>
-                    <a href="../logout.php" class="btn-secondary">Logout</a>
+                    <a href="dashboard.php" class="btn">Dashboard</a>
+                    <a href="../public/index.php" class="btn">Browse</a>
+                    <a href="../logout.php" class="btn">Logout</a>
                 </div>
             </div>
         </nav>
@@ -309,7 +312,7 @@ $user_details = $stmt->fetch();
 
     <footer>
         <div class="container">
-            <p>&copy; 2025 MovieStream v0.2.0. All rights reserved.</p>
+            <p>&copy; 2025 CiolStream v1. All rights reserved.</p>
         </div>
     </footer>
 

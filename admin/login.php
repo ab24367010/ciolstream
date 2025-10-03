@@ -1,5 +1,6 @@
 <?php
-// admin/login.php - Updated for v0.2.0
+// admin/login.php - Updated for v0.2.0 with session security
+session_start();
 require_once '../config/database.php';
 
 $error = '';
@@ -7,7 +8,7 @@ $error = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $username = trim($_POST['username']);
     $password = $_POST['password'];
-    
+
     if (empty($username) || empty($password)) {
         $error = 'Please fill in all fields';
     } else {
@@ -15,8 +16,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $stmt = $pdo->prepare("SELECT id, password FROM admins WHERE username = ?");
         $stmt->execute([$username]);
         $admin = $stmt->fetch();
-        
+
         if ($admin && password_verify($password, $admin['password'])) {
+            // Regenerate session ID to prevent session fixation attacks
+            session_regenerate_id(true);
+
             $_SESSION['admin_id'] = $admin['id'];
             header('Location: dashboard.php');
             exit;
@@ -32,16 +36,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Admin Login - MovieStream v0.2.0</title>
+    <title>Admin Login - CiolStream</title>
+    <link rel="icon" type="image/x-icon" href="../img/favicon.ico">
     <link rel="stylesheet" href="../assets/css/style.css">
 </head>
 <body>
     <header>
         <nav class="navbar">
             <div class="nav-container">
-                <h1 class="logo">
-                    <a href="../public/index.php" style="color: white; text-decoration: none;">MovieStream Admin</a>
-                </h1>
+                <div class="logo">
+                    <a href="../public/index.php">
+                        <img src="../img/logo.png" alt="CiolStream" style="height: 50px; width: auto;">
+                    </a>
+                </div>
                 <div class="nav-links">
                     <a href="../login.php" class="btn">User Login</a>
                     <a href="../public/index.php" class="btn">View Site</a>
