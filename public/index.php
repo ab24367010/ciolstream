@@ -44,6 +44,11 @@ $genres = getGenres($pdo);
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>CiolStream - Your Movie World</title>
     <link rel="icon" type="image/x-icon" href="../img/favicon.ico">
+    <link rel="apple-touch-icon" sizes="180x180" href="../img/apple-touch-icon.png">
+    <link rel="manifest" href="../site.webmanifest">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="CiolStream">
     <link rel="stylesheet" href="../assets/css/style.css">
     <meta name="description" content="Stream movies and TV series online with CiolStream. Your Movie World - Watch your favorite content with subtitles and track your progress.">
 </head>
