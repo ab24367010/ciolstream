@@ -1,108 +1,107 @@
-● # CiolStream v1 - Your Movie World
+# CiolStream v1 - Your Movie World
 
-  A feature-rich movie and TV series streaming platform with advanced
-  subtitle management, user engagement features, and comprehensive admin
-  controls. Built with PHP and MySQL for LAMP/XAMPP environments.
+A feature-rich movie and TV series streaming platform with advanced
+subtitle management, user engagement features, and comprehensive admin
+controls. Built with PHP and MySQL for LAMP/XAMPP environments.
 
-  ## 📋 Project Overview
+## 📋 Project Overview
 
-  CiolStream is a professional-grade streaming platform that allows users
-  to browse, watch, and manage their favorite movies and TV series with
-  multi-language subtitle support. The platform features user
-  authentication, progress tracking, ratings & reviews, watchlist
-  management, and a powerful admin dashboard for content management.
+CiolStream is a professional-grade streaming platform that allows users
+to browse, watch, and manage their favorite movies and TV series with
+multi-language subtitle support. The platform features user
+authentication, progress tracking, ratings & reviews, watchlist
+management, and a powerful admin dashboard for content management.
 
-  ### Key Features
+### Key Features
 
-  - 🎬 **Movies & TV Series**: Browse and watch movies and episodes with
-  organized seasons
-  - 🔤 **Multi-language Subtitles**: Dynamic subtitle loading with sync
-  controls and language switching
-  - 👥 **User Management**: Registration, login, membership expiry, and
-  access control
-  - 📊 **Watch Progress**: Automatic progress tracking with resume playback
-  - ⭐ **Ratings & Reviews**: Community engagement with star ratings and
-  written reviews
-  - 📝 **Watchlist**: Personal collections with priority management
-  - 🎯 **Smart Recommendations**: Personalized suggestions based on viewing
-  history
-  - 🔐 **Admin Panel**: Complete content, user, and subtitle management
-  - 📱 **Responsive Design**: Mobile-friendly interface across all devices
+- 🎬 **Movies & TV Series**: Browse and watch movies and episodes with
+organized seasons
+- 🔤 **Multi-language Subtitles**: Dynamic subtitle loading with sync
+controls and language switching
+- 👥 **User Management**: Registration, login, membership expiry, and
+access control
+- 📊 **Watch Progress**: Automatic progress tracking with resume playback
+- ⭐ **Ratings & Reviews**: Community engagement with star ratings and
+written reviews
+- 📝 **Watchlist**: Personal collections with priority management
+- 🎯 **Smart Recommendations**: Personalized suggestions based on viewing
+history
+- 🔐 **Admin Panel**: Complete content, user, and subtitle management
+- 📱 **Responsive Design**: Mobile-friendly interface across all devices
 
-  ## 🛠️ Tech Stack
+## 🛠️ Tech Stack
 
-  - **Backend**: PHP 8.3+ (compatible with PHP 7.4+)
-  - **Database**: MySQL 8.0+ / MariaDB 10.2+
-  - **Web Server**: Apache 2.4+ with mod_rewrite
-  - **Frontend**: HTML5, CSS3, Vanilla JavaScript
-  - **Video Player**: YouTube iframe API integration
-  - **Subtitle Format**: SRT (SubRip Text)
+- **Backend**: PHP 8.3+ (compatible with PHP 7.4+)
+- **Database**: MySQL 8.0+ / MariaDB 10.2+
+- **Web Server**: Apache 2.4+ with mod_rewrite
+- **Frontend**: HTML5, CSS3, Vanilla JavaScript
+- **Video Player**: YouTube iframe API integration
+- **Subtitle Format**: SRT (SubRip Text)
 
-  ### PHP Extensions Required
+### PHP Extensions Required
 
-  - PDO & PDO_MySQL (database connectivity)
-  - JSON (API responses)
-  - MBString (multi-byte string handling)
-  - FileInfo (file type detection)
-  - Session (user authentication)
+- PDO & PDO_MySQL (database connectivity)
+- JSON (API responses)
+- MBString (multi-byte string handling)
+- FileInfo (file type detection)
+- Session (user authentication)
 
-  ## 📁 Project Structure
+## 📁 Project Structure
 
-  ciolstream/
-  ├── config/
-  │   └── database.php           # Database configuration
-  ├── includes/
-  │   └── functions.php          # Helper functions & utilities
-  ├── assets/
-  │   └── css/
-  │       └── style.css          # Unified responsive styles
-  ├── public/
-  │   ├── index.php              # Main content browser
-  │   ├── watch.php              # Video player with subtitles
-  │   └── series.php             # TV series episodes listing
-  ├── user/
-  │   ├── dashboard.php          # User dashboard & statistics
-  │   ├── settings.php           # Account settings & password change
-  │   └── ajax/
-  │       ├── add_watchlist.php      # Watchlist management
-  │       ├── remove_watchlist.php
-  │       ├── rate_video.php         # Rating system
-  │       ├── rate_content.php       # Series rating
-  │       └── update_progress.php    # Progress tracking
-  ├── admin/
-  │   ├── login.php              # Admin authentication
-  │   ├── dashboard.php          # Complete admin panel
-  │   ├── settings.php           # Admin account settings
-  │   ├── logout.php             # Admin logout
-  │   └── download_subtitle.php  # Subtitle file downloads
-  ├── ajax/
-  │   ├── get_subtitles.php      # Dynamic subtitle loading
-  │   └── get_seasons.php        # Season data for episodes
-  ├── uploads/
-  │   ├── subtitles/             # SRT subtitle files
-  │   └── thumbnails/            # Video thumbnails
-  ├── vendor/                    # Composer dependencies (phpstan)
-  ├── database.sql               # Complete database schema
-  ├── setup.php                  # Installation checker
-  ├── index.php                  # Root redirector
-  ├── login.php                  # User login
-  ├── register.php               # User registration
-  ├── logout.php                 # User logout
-  ├── .htaccess                  # Apache configuration
-  ├── composer.json              # PHP dependencies
-  └── README.md                  # This file
+ciolstream/
+├── config/
+│   └── database.php           # Database configuration
+├── includes/
+│   └── functions.php          # Helper functions & utilities
+├── assets/
+│   └── css/
+│       └── style.css          # Unified responsive styles
+├── public/
+│   ├── index.php              # Main content browser
+│   ├── watch.php              # Video player with subtitles
+│   └── series.php             # TV series episodes listing
+├── user/
+│   ├── dashboard.php          # User dashboard & statistics
+│   ├── settings.php           # Account settings & password change
+│   └── ajax/
+│       ├── add_watchlist.php      # Watchlist management
+│       ├── remove_watchlist.php
+│       ├── rate_video.php         # Rating system
+│       ├── rate_content.php       # Series rating
+│       └── update_progress.php    # Progress tracking
+├── admin/
+│   ├── login.php              # Admin authentication
+│   ├── dashboard.php          # Complete admin panel
+│   ├── settings.php           # Admin account settings
+│   ├── logout.php             # Admin logout
+│   └── download_subtitle.php  # Subtitle file downloads
+├── ajax/
+│   ├── get_subtitles.php      # Dynamic subtitle loading
+│   └── get_seasons.php        # Season data for episodes
+├── uploads/
+│   ├── subtitles/             # SRT subtitle files
+│   └── thumbnails/            # Video thumbnails
+├── vendor/                    # Composer dependencies (phpstan)
+├── database.sql               # Complete database schema
+├── setup.php                  # Installation checker
+├── index.php                  # Root redirector
+├── login.php                  # User login
+├── register.php               # User registration
+├── logout.php                 # User logout
+├── .htaccess                  # Apache configuration
+├── composer.json              # PHP dependencies
+└── README.md                  # This file
 
-  ## 🚀 Installation Guide
+## 🚀 Installation Guide
 
-  ### Prerequisites
+### Prerequisites
+- **Server**: Apache 2.4+ or Nginx 1.18+ 
+- **PHP**: 8.3+ (minimum 7.4)
+- **Database**: MySQL 8.0+ or MariaDB 10.2+
+- **Memory**: 512MB minimum (1GB recommended)
+- **Disk Space**: 1GB minimum
 
-  - **Server**: Apache 2.4+ or Nginx 1.18+
-  - **PHP**: 8.3+ (minimum 7.4)
-  - **Database**: MySQL 8.0+ or MariaDB 10.2+
-  - **Memory**: 512MB minimum (1GB recommended)
-  - **Disk Space**: 1GB minimum
-
-  ### Step 1: Clone/Download Project
+### Step 1: Clone/Download Project
 
   ```bash
   cd /var/www/html/
